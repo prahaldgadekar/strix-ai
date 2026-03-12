@@ -1,39 +1,56 @@
 # ============================================================
-# JARVIS - Full Requirements
-# Install with: pip install -r requirements.txt
+#  STRIX AI Assistant — Python Dependencies
+#  Install all with:  pip install -r requirements.txt
 # ============================================================
 
-# GUI
-PySide6>=6.6.0
+# ── GUI ──────────────────────────────────────────────────────
+PySide6>=6.6.0                  # Main GUI framework (Qt for Python)
 
-# Voice Input / Output
-SpeechRecognition>=3.10.0
-pyttsx3>=2.90
-pyaudio>=0.2.13
+# ── AI / LLM ─────────────────────────────────────────────────
+ollama>=0.2.0                   # Talk to local Ollama models (phi3, llama3.1, qwen)
+requests>=2.31.0                # HTTP calls to Ollama API
 
-# Spell Correction / NLP
-textblob>=0.18.0
+# ── Speech Recognition ───────────────────────────────────────
+SpeechRecognition>=3.10.0       # Wake word + voice input (uses Google Speech API)
+pyaudio>=0.2.14                 # Microphone access for SpeechRecognition
 
-# LLM (Ollama local models)
-ollama>=0.1.7
+# ── Text-to-Speech ───────────────────────────────────────────
+# Windows SAPI is used by default (built-in, no install needed)
+# Optional: pyttsx3 as fallback
+pyttsx3>=2.90                   # TTS fallback (uses Windows SAPI internally)
 
-# Memory / Database
-# SQLite is built into Python — no install needed
+# ── Spotify ──────────────────────────────────────────────────
+spotipy>=2.23.0                 # Spotify Web API (for playlist check + auto-play)
+                                # Setup: https://developer.spotify.com/dashboard
 
-# HTTP Requests (APIs)
-requests>=2.31.0
+# ── Automation / Keyboard ────────────────────────────────────
+pyautogui>=0.9.54               # Keyboard/mouse automation (Spotify auto-play fallback)
+keyboard>=0.13.5                # Global hotkey support
 
-# System Monitoring
-psutil>=5.9.0
+# ── Environment / Config ─────────────────────────────────────
+python-dotenv>=1.0.0            # Load .env file (API keys, config)
 
-# Automation
-pyautogui>=0.9.54
+# ── Memory / Database ────────────────────────────────────────
+# Uses Python built-in sqlite3 — no install needed
 
-# Environment Variables
-python-dotenv>=1.0.0
+# ── System / Windows Utils ───────────────────────────────────
+psutil>=5.9.0                   # CPU, RAM, battery stats for status bar
+pywin32>=306                    # Windows API (window focus, process control)
+                                # If pywin32 fails: pip install pywin32 --upgrade
+wmi>=1.5.1                      # Windows hardware info (optional, for system stats)
 
-# Future: Semantic memory
-# chromadb>=0.4.0
+# ── Networking ───────────────────────────────────────────────
+urllib3>=2.0.0                  # Already a requests dependency, listed for clarity
 
-# Future: Web Search
-# duckduckgo-search>=3.9.6
+# ============================================================
+#  QUICK INSTALL (copy-paste into terminal):
+#
+#  pip install -r requirements.txt
+#
+#  If pyaudio fails on Windows:
+#  pip install pipwin
+#  pipwin install pyaudio
+#
+#  If pywin32 has issues after install, run:
+#  python Scripts/pywin32_postinstall.py -install
+# ============================================================
