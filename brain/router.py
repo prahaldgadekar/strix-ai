@@ -1,28 +1,35 @@
 """
-brain/router.py — STRIX v4.1
+brain/router.py — STRIX v4.3
 ==============================
-UPGRADE: New task-specific model routing.
-
-Every task type now has the RIGHT model assigned:
-  phi3         → chat, music, quick, search  (fast, small)
-  llama3.1     → reasoning, planning          (smart, complex)
-  qwen2.5-coder → coding, frontend, backend  (precise code)
-
-New model keys added:
-  "music"  → phi3  — parse song commands, music control replies
-  "quick"  → phi3  — system status, jokes, weather summary
-  "search" → phi3  — format search results
+Multi-LLM routing:
+  phi3         → chat / greetings / quick answers
+  llama3.1     → reasoning / planning / explain / complex
+  qwen2.5-coder → ALL code (Python, Java, C++, HTML, CSS, backend)
 """
 
+import os
+import sys
+import subprocess
 import time
+
+# ── Path setup ────────────────────────────────────────────────
+# Ensures brain/ and root/ modules are always importable
+# regardless of where STRIX is launched from
+_BRAIN_DIR = os.path.dirname(os.path.abspath(__file__))   # E:\Strix\brain
+_ROOT_DIR  = os.path.dirname(_BRAIN_DIR)                  # E:\Strix
+
+for _p in (_BRAIN_DIR, _ROOT_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from models.llm_interface import (
     call_chat_model, call_reasoning_model, call_coding_model,
     call_frontend_model, call_backend_model, call_planning_model,
-    call_music_model, call_quick_model,
     is_ollama_running, _call_ollama
 )
 
-# ── Identity block ────────────────────────────────────────────
+# ── System prompts per role ───────────────────────────────────
+# ── Identity block injected into every prompt ────────────────
 _IDENTITY = (
     "Your name is STRIX. "
     "You were built and created by Prahlad — that is your creator, your maker, your Boss. "
@@ -33,23 +40,10 @@ _IDENTITY = (
     "Always refer to the user as Boss. "
 )
 
-# ── System prompts per role ───────────────────────────────────
 PROMPT_CHAT = (
     "[INST] You are STRIX, a sharp and intelligent AI assistant. " + _IDENTITY +
     "Keep replies SHORT — max 2 sentences. "
     "No bullet points, no markdown, no special symbols. [/INST]\n\n"
-)
-
-PROMPT_MUSIC = (
-    "[INST] You are STRIX, a music assistant. " + _IDENTITY +
-    "Confirm music commands in ONE short sentence. "
-    "Example: 'Playing co2, Boss.' or 'Paused, Boss.' "
-    "No explanation needed. [/INST]\n\n"
-)
-
-PROMPT_QUICK = (
-    "[INST] You are STRIX, an efficient assistant. " + _IDENTITY +
-    "Give ONE short, direct answer. Max 1 sentence. No padding. [/INST]\n\n"
 )
 
 PROMPT_REASON = (
@@ -79,20 +73,21 @@ PROMPT_FRONTEND = (
 PROMPT_BACKEND = (
     "You are STRIX, an expert backend developer AI. " + _IDENTITY +
     "Write clean server-side code — APIs, databases, logic. "
-    "Follow best practices. Add comments. No extra explanation unless asked.\n\n"
+    "Follow best practices. Add comments. No extra explanation unless asked. "
+    "NEVER mention ASUS, ROG, or gaming PC.\n\n"
 )
 
 TOOL_ACTIONS = {
-    "get_weather", "get_news", "get_system_status",
-    "search_file", "read_file", "directory_tree",
-    "create_java_project", "create_c_project", "create_cpp_project",
-    "create_python_project", "list_projects",
-    "remember_preference", "get_preferences",
-    "create_desktop_file", "create_desktop_folder",
-    "list_desktop", "delete_desktop_file", "open_app", "open_explorer",
-    "get_crypto", "get_top_crypto", "get_joke",
-    "get_nasa", "get_ip_info", "get_exchange",
-    "wiki_search", "get_github",
+    "get_weather","get_news","get_system_status",
+    "search_file","read_file","directory_tree",
+    "create_java_project","create_c_project","create_cpp_project",
+    "create_python_project","list_projects",
+    "remember_preference","get_preferences",
+    "create_desktop_file","create_desktop_folder",
+    "list_desktop","delete_desktop_file","open_app","open_explorer",
+    "get_crypto","get_top_crypto","get_joke",
+    "get_nasa","get_ip_info","get_exchange",
+    "wiki_search","get_github",
     "create_file_in_folder",
     "play_spotify", "play_playlist", "search_files", "open_url",
     "create_code_file", "oi_task",
@@ -102,18 +97,43 @@ TOOL_ACTIONS = {
 
 # ── Language detector ────────────────────────────────────────
 _LANG_KEYWORDS = {
-    "java": "Java", "kotlin": "Kotlin",
-    "c++": "C++", "cpp": "C++", "c#": "C#", "csharp": "C#",
-    "javascript": "JavaScript", "typescript": "TypeScript",
-    "nodejs": "JavaScript (Node.js)", " node ": "JavaScript (Node.js)",
-    "golang": "Go", " go ": "Go", "rust": "Rust", "php": "PHP",
-    "swift": "Swift", "ruby": "Ruby", "scala": "Scala",
-    "dart": "Dart", "flutter": "Dart (Flutter)", "perl": "Perl",
-    "matlab": "MATLAB", " sql": "SQL", "bash": "Bash", "shell": "Shell/Bash",
-    ".java": "Java", ".js": "JavaScript", ".ts": "TypeScript",
-    ".kt": "Kotlin", ".cpp": "C++", ".cs": "C#", ".go": "Go",
-    ".rs": "Rust", ".rb": "Ruby", ".php": "PHP", ".swift": "Swift",
-    "python": "Python", ".py": "Python",
+    "java":        "Java",
+    "kotlin":      "Kotlin",
+    "c++":         "C++",
+    "cpp":         "C++",
+    "c#":          "C#",
+    "csharp":      "C#",
+    "javascript":  "JavaScript",
+    "typescript":  "TypeScript",
+    "nodejs":      "JavaScript (Node.js)",
+    " node ":      "JavaScript (Node.js)",
+    "golang":      "Go",
+    " go ":        "Go",
+    "rust":        "Rust",
+    "php":         "PHP",
+    "swift":       "Swift",
+    "ruby":        "Ruby",
+    "scala":       "Scala",
+    "dart":        "Dart",
+    "flutter":     "Dart (Flutter)",
+    "perl":        "Perl",
+    "matlab":      "MATLAB",
+    " sql":        "SQL",
+    "bash":        "Bash",
+    "shell":       "Shell/Bash",
+    ".java":       "Java",
+    ".js":         "JavaScript",
+    ".ts":         "TypeScript",
+    ".kt":         "Kotlin",
+    ".cpp":        "C++",
+    ".cs":         "C#",
+    ".go":         "Go",
+    ".rs":         "Rust",
+    ".rb":         "Ruby",
+    ".php":        "PHP",
+    ".swift":      "Swift",
+    "python":      "Python",
+    ".py":         "Python",
 }
 
 def _detect_language(prompt: str) -> str:
@@ -132,25 +152,22 @@ def route_task(task: dict, stream: bool = False):
         return _run_tool(action, params)
 
     if action == "llm_response":
-        prompt    = params.get("prompt", task.get("description", ""))
+        prompt   = params.get("prompt", task.get("description", ""))
         model_key = params.get("model", "chat")
         return _route_to_model(prompt, model_key, stream=stream)
 
-    return _route_to_model(task.get("description", ""), "chat", stream=stream)
+    return _route_to_model(task.get("description",""), "chat", stream=stream)
 
 
 def _route_to_model(prompt: str, model_key: str, stream: bool = False):
     """
-    Route prompt to correct model based on task type.
-
-    chat      → phi3        (fast 2-sentence replies)
-    music     → phi3        (song command confirmations)
-    quick     → phi3        (short direct answers)
-    reasoning → llama3.1    (explain, compare, analyse)
-    planning  → llama3.1    (multi-step planning)
+    Send prompt to the right model based on model_key.
+    chat      → phi3
+    reasoning → llama3.1
     coding    → qwen2.5-coder
     frontend  → qwen2.5-coder
     backend   → qwen2.5-coder
+    planning  → llama3.1
     """
     # Wait for Ollama
     for attempt in range(5):
@@ -164,212 +181,243 @@ def _route_to_model(prompt: str, model_key: str, stream: bool = False):
         return iter([msg]) if stream else msg
 
     if model_key == "chat":
-        return call_chat_model(PROMPT_CHAT + prompt, stream=stream)
-
-    elif model_key == "music":
-        return call_music_model(PROMPT_MUSIC + prompt, stream=stream)
-
-    elif model_key == "quick":
-        return call_quick_model(PROMPT_QUICK + prompt, stream=stream)
+        full = PROMPT_CHAT + prompt
+        return call_chat_model(full, stream=stream)
 
     elif model_key == "reasoning":
-        return call_reasoning_model(PROMPT_REASON + prompt, stream=stream)
+        full = PROMPT_REASON + prompt
+        return call_reasoning_model(full, stream=stream)
 
     elif model_key == "coding":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this code in {lang} ONLY.\n" if lang else ""
-        return call_coding_model(PROMPT_CODE + lang_note + prompt, stream=stream)
+        full = PROMPT_CODE + lang_note + prompt
+        return call_coding_model(full, stream=stream)
 
     elif model_key == "frontend":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this in {lang} ONLY.\n" if lang else ""
-        return call_frontend_model(PROMPT_FRONTEND + lang_note + prompt, stream=stream)
+        full = PROMPT_FRONTEND + lang_note + prompt
+        return call_frontend_model(full, stream=stream)
 
     elif model_key == "backend":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this in {lang} ONLY.\n" if lang else ""
-        return call_backend_model(PROMPT_BACKEND + lang_note + prompt, stream=stream)
+        full = PROMPT_BACKEND + lang_note + prompt
+        return call_backend_model(full, stream=stream)
 
     elif model_key == "planning":
-        return call_planning_model(PROMPT_REASON + prompt, stream=stream)
-
-    elif model_key in ("qwen2.5-coder", "qwen2.5-coder:latest"):
-        # Direct model name used by code-in-chat path
-        lang = _detect_language(prompt)
-        lang_note = f"\nIMPORTANT: Write this code in {lang} ONLY.\n" if lang else ""
-        return call_coding_model(PROMPT_CODE + lang_note + prompt, stream=stream)
+        full = PROMPT_REASON + prompt
+        return call_planning_model(full, stream=stream)
 
     else:
-        # Fallback → chat
-        return call_chat_model(PROMPT_CHAT + prompt, stream=stream)
+        # Default fallback → chat model
+        full = PROMPT_CHAT + prompt
+        return call_chat_model(full, stream=stream)
 
 
 def _run_tool(action: str, params: dict) -> str:
 
     if action == "get_weather":
-        from api.weather import format_weather
+        from weather import format_weather
         return format_weather(params.get("city"))
 
     if action == "get_news":
-        from api.news import format_news
-        return format_news(params.get("category", "technology"), params.get("count", 5))
+        from news import format_news
+        return format_news(params.get("category","technology"), params.get("count",5))
 
     if action == "get_system_status":
-        from tools.system_tools import get_system_summary
+        from system_tools import get_system_summary
         return get_system_summary()
 
     if action == "wiki_search":
-        from api.extras import search_wikipedia
-        return search_wikipedia(params.get("query", ""))
+        from extras import search_wikipedia
+        return search_wikipedia(params.get("query",""))
 
     if action == "get_crypto":
-        from api.extras import get_crypto_price
-        return get_crypto_price(params.get("coin", "bitcoin"))
+        from extras import get_crypto_price
+        return get_crypto_price(params.get("coin","bitcoin"))
 
     if action == "get_top_crypto":
-        from api.extras import get_top_crypto
+        from extras import get_top_crypto
         return get_top_crypto()
 
     if action == "get_joke":
         try:
             import pyjokes
-            joke = pyjokes.get_joke(language="en", category="neutral")
-            return f"Here is one for you Boss — {joke}"
+            return f"Here is one for you Boss — {pyjokes.get_joke(language='en', category='neutral')}"
         except ImportError:
-            from api.extras import get_joke
+            from extras import get_joke
             return get_joke()
 
     if action == "get_nasa":
-        from api.extras import get_nasa_apod
+        from extras import get_nasa_apod
         return get_nasa_apod()
 
     if action == "get_ip_info":
-        from api.extras import get_my_ip_info
+        from extras import get_my_ip_info
         return get_my_ip_info()
 
     if action == "get_exchange":
-        from api.extras import get_exchange_rate
-        return get_exchange_rate(params.get("from", "USD"), params.get("to", "INR"))
+        from extras import get_exchange_rate
+        return get_exchange_rate(params.get("from","USD"), params.get("to","INR"))
 
     if action == "get_github":
-        from api.extras import get_github_profile
-        username = params.get("username", "")
+        from extras import get_github_profile
+        username = params.get("username","")
         if not username:
             return "Please tell me the GitHub username Boss."
         return get_github_profile(username)
 
-    if action == "search_file":
-        from tools.search_tools import search_files, format_search_results
-        return format_search_results(search_files(params.get("query", "")))
+    if action in ("search_file", "search_files"):
+        from search_tools import search_files, format_search_results
+        query       = params.get("query", "")
+        search_path = params.get("search_path", None)
+        EXT_WORDS = {
+            "python": ".py", "javascript": ".js", "js file": ".js",
+            "typescript": ".ts", "html": ".html", "css": ".css",
+            "java": ".java", "cpp": ".cpp", "c++": ".cpp",
+            "text": ".txt", "txt": ".txt", "json": ".json",
+            "xml": ".xml", "csv": ".csv", "pdf": ".pdf",
+        }
+        extensions = None
+        q_lower = query.lower()
+        for word, ext in EXT_WORDS.items():
+            if word in q_lower:
+                extensions = [ext]
+                query = q_lower.replace(word, "").replace("file", "").strip(" .")
+                break
+        results = search_files(query=query, search_dir=search_path, extensions=extensions)
+        return format_search_results(results)
 
     if action == "read_file":
-        from tools.search_tools import read_file
-        return read_file(params.get("path", ""))
+        from search_tools import read_file
+        return read_file(params.get("path",""))
 
     if action == "directory_tree":
-        from tools.search_tools import get_directory_tree
-        return get_directory_tree(params.get("path", "."))
+        from search_tools import get_directory_tree
+        return get_directory_tree(params.get("path","."))
 
     if action == "create_java_project":
-        from tools.project_tools import create_java_project
-        return create_java_project(params.get("name", "MyProject"))
+        from project_tools import create_java_project
+        return create_java_project(params.get("name","MyProject"))
 
     if action == "create_c_project":
-        from tools.project_tools import create_c_project
-        return create_c_project(params.get("name", "MyProject"))
+        from project_tools import create_c_project
+        return create_c_project(params.get("name","MyProject"))
 
     if action == "create_cpp_project":
-        from tools.project_tools import create_cpp_project
-        return create_cpp_project(params.get("name", "MyProject"))
+        from project_tools import create_cpp_project
+        return create_cpp_project(params.get("name","MyProject"))
 
     if action == "create_python_project":
-        from tools.project_tools import create_python_project
-        return create_python_project(params.get("name", "MyProject"))
+        from project_tools import create_python_project
+        return create_python_project(params.get("name","MyProject"))
 
     if action == "list_projects":
-        from tools.project_tools import list_projects
+        from project_tools import list_projects
         return list_projects()
 
     if action == "remember_preference":
-        from memory.memory_db import set_preference
-        key = params.get("key", "")
-        val = params.get("value", "")
+        from memory_db import set_preference
+        key = params.get("key",""); val = params.get("value","")
         if key:
             set_preference(key, val)
             return "Got it Boss, I will remember that."
         return "No key provided."
 
     if action == "get_preferences":
-        from memory.memory_db import get_all_preferences
+        from memory_db import get_all_preferences
         prefs = get_all_preferences()
         if not prefs:
             return "No preferences saved yet."
-        return "Your preferences: " + ", ".join(f"{k} is {v}" for k, v in prefs.items())
+        return "Your preferences: " + ", ".join(f"{k} is {v}" for k,v in prefs.items())
 
+    # ── Desktop / File actions ────────────────────────────────
     if action == "create_desktop_file":
-        from tools.windows_tools import create_file_on_desktop
-        return create_file_on_desktop(params.get("filename", "file.txt"), params.get("content", ""))
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        fname   = params.get("filename", "file.txt")
+        path    = os.path.join(desktop, fname)
+        content = params.get("content", "")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return f"File '{fname}' created on Desktop."
+        except Exception as e:
+            return f"Could not create file: {e}"
 
     if action == "create_desktop_folder":
-        from tools.windows_tools import create_folder_on_desktop
-        return create_folder_on_desktop(params.get("foldername", "NewFolder"))
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        name    = params.get("foldername", "NewFolder")
+        path    = os.path.join(desktop, name)
+        try:
+            os.makedirs(path, exist_ok=True)
+            return f"Folder '{name}' created on Desktop."
+        except Exception as e:
+            return f"Could not create folder: {e}"
 
     if action == "list_desktop":
-        from tools.windows_tools import list_desktop_files
-        return list_desktop_files()
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        try:
+            items = os.listdir(desktop)
+            if not items:
+                return "Desktop is empty."
+            return "Desktop files:\n" + "\n".join(f"  • {i}" for i in sorted(items))
+        except Exception as e:
+            return f"Could not list desktop: {e}"
 
-    if action == "search_files":
-        from tools.windows_tools import search_files
-        return search_files(
-            query       = params.get("query", ""),
-            search_path = params.get("search_path", None)
-        )
+    if action == "delete_desktop_file":
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        fname   = params.get("filename","")
+        path    = os.path.join(desktop, fname)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                return f"Deleted '{fname}' from Desktop."
+            return f"File '{fname}' not found on Desktop."
+        except Exception as e:
+            return f"Could not delete file: {e}"
 
+    # ── Open URL in correct Chrome ────────────────────────────
     if action == "open_url":
-        import subprocess, os
         url     = params.get("url", "")
         profile = params.get("profile", "main")
         if not url:
             return "No URL provided."
 
-        uname = os.environ.get("USERNAME", "")
-        local = os.environ.get("LOCALAPPDATA") or os.path.join("C:\\Users", uname, "AppData", "Local")
+        local      = os.environ.get("LOCALAPPDATA", "")
+        if not local:
+            uname  = os.environ.get("USERNAME", "prahl")
+            local  = f"C:\\Users\\{uname}\\AppData\\Local"
 
-        dev_chrome = os.path.join(local, "Google", "Chrome Dev", "Application", "chrome.exe")
-        default_chrome_paths = [
-            os.path.join(local, "Google", "Chrome", "Application", "chrome.exe"),
-            os.path.join(os.environ.get("PROGRAMFILES", "C:/Program Files"), "Google", "Chrome", "Application", "chrome.exe"),
-            os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)"), "Google", "Chrome", "Application", "chrome.exe"),
-        ]
-        default_chrome = next((p for p in default_chrome_paths if os.path.exists(p)), None)
+        dev_exe    = os.path.join(local, "Google", "Chrome Dev", "Application", "chrome.exe")
+        stable_exe = os.path.join(local, "Google", "Chrome", "Application", "chrome.exe")
+        dev_data   = os.path.join(local, "Google", "Chrome Dev", "User Data")
+        stable_data= os.path.join(local, "Google", "Chrome", "User Data")
 
-        # ═══════════════════════════════════════════════════════
-        # Chrome routing:
-        #   profile="work" → prahaldgadekar64@gmail.com   → Default Chrome
-        #   profile="main" → prahladgadekar1569@gmail.com → Dev Chrome
-        # ═══════════════════════════════════════════════════════
+        print(f"[Chrome] profile={profile} | dev_exe_exists={os.path.exists(dev_exe)}")
+
         if profile == "work":
-            exe = default_chrome
+            exe      = stable_exe
+            data_dir = stable_data
         else:
-            exe = dev_chrome if os.path.exists(dev_chrome) else default_chrome
+            exe      = dev_exe if os.path.exists(dev_exe) else stable_exe
+            data_dir = dev_data if os.path.exists(dev_exe) else stable_data
 
-        if exe and os.path.exists(exe):
-            subprocess.Popen([exe, url])
+        print(f"[Chrome] launching: {exe}")
+        if os.path.exists(exe):
+            subprocess.Popen([exe, f"--user-data-dir={data_dir}",
+                              "--profile-directory=Default", url])
         else:
             subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
-
         return f"Opened {url}, Boss."
 
     if action == "play_spotify":
-        query = params.get("query", "")
         try:
             from spotify_controller import play_song
-            result = play_song(query)
-            return result
-        except Exception:
-            pass
-        from tools.windows_tools import play_spotify
-        return play_spotify(query=query)
+            return play_song(params.get("query",""))
+        except Exception as e:
+            return f"Spotify error: {e}"
 
     if action == "play_playlist":
         pl_name = params.get("name", "tired")
@@ -378,53 +426,38 @@ def _run_tool(action: str, params: dict) -> str:
             return play_playlist(pl_name)
         except Exception:
             pass
-        import subprocess
         PLAYLISTS = {
-            "tired": "https://open.spotify.com/playlist/6dhvXHh0skhIQm2tL0uJYP?si=8301a4a249674b0e",
+            "tired": "https://open.spotify.com/playlist/6dhvXHh0skhIQm2tL0uJYP",
         }
         url = PLAYLISTS.get(pl_name.lower(), list(PLAYLISTS.values())[0])
         subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
         return f"Opened your {pl_name} playlist, Boss."
 
-    if action == "delete_desktop_file":
-        from tools.windows_tools import delete_file_on_desktop
-        return delete_file_on_desktop(params.get("filename", ""))
-
     if action == "open_app":
         app = params.get("app", "").lower().strip()
         if app in ("vscode", "visual studio code", "code"):
-            import subprocess, os
             uname = os.environ.get("USERNAME", "")
-            vscode_paths = [
-                "C:\\Users\\" + uname + "\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+            for vp in [
+                f"C:\\Users\\{uname}\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
                 "C:\\Program Files\\Microsoft VS Code\\Code.exe",
                 "C:\\Program Files (x86)\\Microsoft VS Code\\Code.exe",
-            ]
-            for vp in vscode_paths:
+            ]:
                 if os.path.exists(vp):
-                    try:
-                        subprocess.Popen([vp])
-                        return "VSCode opened, Boss."
-                    except Exception:
-                        continue
+                    subprocess.Popen([vp])
+                    return "VSCode opened, Boss."
             try:
                 subprocess.Popen(["code"], shell=True)
                 return "VSCode opened, Boss."
             except Exception as e:
                 return f"Couldn't open VSCode: {e}"
+        # All other apps
         try:
-            from tools.windows_tools import open_application
-            return open_application(app)
-        except ImportError:
-            import subprocess
-            try:
-                subprocess.Popen([app], shell=True)
-                return f"Opened {app}, Boss."
-            except Exception as e:
-                return f"Couldn't open {app}: {e}"
+            subprocess.Popen([app], shell=True)
+            return f"Opened {app}, Boss."
+        except Exception as e:
+            return f"Couldn't open {app}: {e}"
 
     if action == "open_explorer":
-        import subprocess
         path = params.get("path", "E:\\")
         try:
             subprocess.Popen(["explorer", path])
@@ -463,27 +496,19 @@ def _run_tool(action: str, params: dict) -> str:
     if action == "create_code_file":
         try:
             from oi_runner import create_file_with_code
-            return create_file_with_code(params.get("prompt", ""))
+            return create_file_with_code(params.get("prompt",""))
         except Exception as e:
             return f"File creation failed: {e}"
 
-    if action == "oi_task":
-        try:
-            from oi_runner import run_oi_task
-            return run_oi_task(params.get("prompt", ""))
-        except Exception as e:
-            return f"Open Interpreter error: {e}"
-
     if action == "create_file_in_folder":
-        folder    = params.get("folder", "")
-        filename  = params.get("filename", "main.py")
-        content_text = params.get("content", "")
+        folder   = params.get("folder","")
+        filename = params.get("filename","main.py")
+        content  = params.get("content","")
         try:
-            import os
             os.makedirs(folder, exist_ok=True)
             filepath = os.path.join(folder, filename)
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write(content_text)
+                f.write(content)
             return f"Created {filename} inside {os.path.basename(folder)}."
         except Exception as e:
             return f"Could not create file: {e}"

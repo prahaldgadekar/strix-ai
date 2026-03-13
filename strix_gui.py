@@ -1162,7 +1162,8 @@ class ChatBubble(QWidget):
                         col.addWidget(self._make_text_label(txt, is_strix=True))
 
             col_wrap = QWidget()
-            col_wrap.setMaximumWidth(680)
+            col_wrap.setMaximumWidth(860)
+            col_wrap.setMinimumWidth(420)
             col_wrap.setLayout(col)
             layout.addWidget(col_wrap)
             layout.addStretch()
@@ -1187,7 +1188,8 @@ class ChatBubble(QWidget):
             col.addLayout(name_row)
 
             msg_lbl = self._make_text_label(text, is_strix=False)
-            msg_lbl.setMaximumWidth(600)
+            msg_lbl.setMinimumWidth(80)
+            msg_lbl.setMaximumWidth(700)
             col.addWidget(msg_lbl, 0, Qt.AlignRight)
             col.setAlignment(Qt.AlignRight)
 
@@ -1200,35 +1202,22 @@ class ChatBubble(QWidget):
         lbl.setWordWrap(True)
         lbl.setTextFormat(Qt.PlainText)
         lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        # Expanding width so long words like "multiplication" always wrap,
-        # never overflow the bubble
-        lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         if is_strix:
-            lbl.setMaximumWidth(660)
-            lbl.setMinimumWidth(120)
-            # Color bubble based on which model answered
+            lbl.setMaximumWidth(720)
             m = (self._model or "").lower()
             if "qwen" in m or "coder" in m:
-                bg  = "rgba(0, 40, 15, 230)"
-                bl  = "#00cc44"
-                bt  = "rgba(0,204,68,55)"
-                bx  = "rgba(0,204,68,20)"
+                bg = "rgba(0, 40, 15, 230)";  bl = "#00cc44"
+                bt = "rgba(0,204,68,55)";      bx = "rgba(0,204,68,20)"
             elif "llama" in m:
-                bg  = "rgba(25, 5, 50, 230)"
-                bl  = "#aa44ff"
-                bt  = "rgba(170,68,255,55)"
-                bx  = "rgba(170,68,255,20)"
+                bg = "rgba(25, 5, 50, 230)";   bl = "#aa44ff"
+                bt = "rgba(170,68,255,55)";     bx = "rgba(170,68,255,20)"
             elif "tool" in m:
-                bg  = "rgba(0, 35, 40, 230)"
-                bl  = "#00e5ff"
-                bt  = "rgba(0,229,255,55)"
-                bx  = "rgba(0,229,255,20)"
+                bg = "rgba(0, 35, 40, 230)";   bl = "#00e5ff"
+                bt = "rgba(0,229,255,55)";      bx = "rgba(0,229,255,20)"
             else:
-                # phi3 / default — ROG red
-                bg  = "rgba(0, 25, 50, 230)"
-                bl  = ROG
-                bt  = "rgba(255,0,51,55)"
-                bx  = "rgba(0,229,255,20)"
+                bg = "rgba(0, 25, 50, 230)";   bl = ROG
+                bt = "rgba(255,0,51,55)";       bx = "rgba(0,229,255,20)"
             lbl.setStyleSheet(f"""
                 QLabel {{
                     background: {bg};
@@ -1245,8 +1234,9 @@ class ChatBubble(QWidget):
                 }}
             """)
         else:
-            lbl.setMaximumWidth(560)
-            lbl.setMinimumWidth(80)
+            # YOU bubble — shrinks to fit short text, expands for long text
+            lbl.setMinimumWidth(40)
+            lbl.setMaximumWidth(700)
             lbl.setStyleSheet(f"""
                 QLabel {{
                     background: rgba(50, 32, 0, 225);
@@ -1264,7 +1254,7 @@ class ChatBubble(QWidget):
         return lbl
 
     def _make_code_block(self, code: str, lang: str) -> QFrame:
-        import html as _html
+        import html as _html, re as _re
         frame = QFrame()
         frame.setStyleSheet(f"""
             QFrame {{
@@ -1274,7 +1264,6 @@ class ChatBubble(QWidget):
                 border-radius: 6px;
             }}
         """)
-        frame.setMaximumWidth(900)
         vl = QVBoxLayout(frame)
         vl.setContentsMargins(0, 0, 0, 0)
         vl.setSpacing(0)
@@ -1289,14 +1278,12 @@ class ChatBubble(QWidget):
         bl = QHBoxLayout(bar)
         bl.setContentsMargins(10, 0, 8, 0)
 
-        # Language pill
         lang_name = lang.upper() if lang else "CODE"
         lang_lbl = QLabel(lang_name)
         lang_lbl.setStyleSheet(
             f"color:{ROG}; font-size:9px; font-weight:bold;"
             f" letter-spacing:3px; background:transparent;")
 
-        # Line count
         n_lines = code.count("\n") + 1
         lines_lbl = QLabel(f"{n_lines} LINES")
         lines_lbl.setStyleSheet(
@@ -1311,9 +1298,7 @@ class ChatBubble(QWidget):
                 border: 1px solid {CYAN2}; border-radius: 3px;
                 font-size: 8px; letter-spacing: 1px;
             }}
-            QPushButton:hover {{
-                background: {CYAN}; color: #000;
-            }}
+            QPushButton:hover {{ background: {CYAN}; color: #000; }}
         """)
         copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(code))
         bl.addWidget(lang_lbl)
@@ -1323,71 +1308,168 @@ class ChatBubble(QWidget):
         bl.addWidget(copy_btn)
         vl.addWidget(bar)
 
-        # ── Thin separator ────────────────────────────────
         sep = QWidget()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: rgba(255,0,51,40);")
+        sep.setStyleSheet("background: rgba(255,0,51,40);")
         vl.addWidget(sep)
 
-        # ── Code body with syntax-highlight colors ────────
-        # Simple keyword highlighter using HTML spans
+        # ── Syntax highlight ──────────────────────────────
         def highlight(code_str: str, language: str) -> str:
-            safe = _html.escape(code_str)
-            if language in ("python", "py"):
-                import re as _re
-                # keywords
+            import re as _re
+            import html as _html
+            lng = language.lower()
+
+            # Tokenize: split into [strings, comments, code] segments
+            # Process each segment separately — keywords only applied to code tokens
+            def tokenize(src: str, is_python: bool) -> list:
+                """Returns list of (token_type, text) tuples.
+                token_type: 'str' | 'comment' | 'code'
+                """
+                tokens = []
+                i = 0
+                while i < len(src):
+                    # Triple-quoted strings (Python)
+                    if is_python and src[i:i+3] in ('"""', "'''"):
+                        q = src[i:i+3]
+                        end = src.find(q, i+3)
+                        if end == -1: end = len(src)
+                        else: end += 3
+                        tokens.append(('str', src[i:end])); i = end
+                    # Single/double quoted strings
+                    elif src[i] in ('"', "'"):
+                        q = src[i]; j = i+1
+                        while j < len(src) and src[j] != q and src[j] != '\n':
+                            if src[j] == '\\': j += 1
+                            j += 1
+                        end = j+1 if j < len(src) and src[j] == q else j
+                        tokens.append(('str', src[i:end])); i = end
+                    # Comments
+                    elif src[i] == '#' and is_python:
+                        end = src.find('\n', i)
+                        if end == -1: end = len(src)
+                        tokens.append(('comment', src[i:end])); i = end
+                    elif src[i:i+2] == '//' and not is_python:
+                        end = src.find('\n', i)
+                        if end == -1: end = len(src)
+                        tokens.append(('comment', src[i:end])); i = end
+                    else:
+                        # Accumulate code characters
+                        j = i+1
+                        while j < len(src):
+                            c = src[j]
+                            if c in ('"', "'"):
+                                break
+                            if c == '#' and is_python:
+                                break
+                            if src[j:j+2] == '//' and not is_python:
+                                break
+                            j += 1
+                        tokens.append(('code', src[i:j])); i = j
+                return tokens
+
+            def apply_kw(text: str, kws: str, is_py: bool) -> str:
+                """Apply keyword, number, builtin coloring to plain code text."""
+                s = _html.escape(text)
+                s = _re.sub(kws,
+                    r'<span style="color:#ff7b72;font-weight:bold;">\1</span>', s)
+                s = _re.sub(r'\b(\d+\.?\d*)\b',
+                    r'<span style="color:#f2cc60;">\1</span>', s)
+                if is_py:
+                    s = _re.sub(r'\b(print|len|range|str|int|float|list|dict|'
+                                r'set|tuple|type|open|super|self)\b',
+                        r'<span style="color:#d2a8ff;">\1</span>', s)
+                return s
+
+            if lng in ("python", "py"):
                 kws = (r'\b(def|class|import|from|return|if|else|elif|for|while|'
                        r'in|not|and|or|True|False|None|try|except|finally|with|'
                        r'as|pass|break|continue|lambda|yield|async|await|raise|'
                        r'global|nonlocal|del|is)\b')
-                safe = _re.sub(kws,
-                    r'<span style="color:#ff7b72;">\1</span>', safe)
-                # strings
-                safe = _re.sub(r'(&#x27;[^&#]*&#x27;|&quot;[^&]*&quot;)',
-                    r'<span style="color:#a5d6ff;">\1</span>', safe)
-                # comments
-                safe = _re.sub(r'(#[^\n]*)',
-                    r'<span style="color:#6e7681;">\1</span>', safe)
-                # numbers
-                safe = _re.sub(r'\b(\d+\.?\d*)\b',
-                    r'<span style="color:#f2cc60;">\1</span>', safe)
-                # builtins/functions
-                safe = _re.sub(r'\b(print|len|range|str|int|float|list|dict|'
-                               r'set|tuple|type|open|super|self)\b',
-                    r'<span style="color:#d2a8ff;">\1</span>', safe)
-            elif language in ("javascript", "js", "typescript", "ts"):
-                import re as _re
+                tokens = tokenize(code_str, is_python=True)
+                out = []
+                for kind, val in tokens:
+                    if kind == 'str':
+                        out.append(f'<span style="color:#a5d6ff;">{_html.escape(val)}</span>')
+                    elif kind == 'comment':
+                        out.append(f'<span style="color:#6e7681;font-style:italic;">{_html.escape(val)}</span>')
+                    else:
+                        out.append(apply_kw(val, kws, True))
+                result = "".join(out)
+
+            elif lng in ("javascript", "js", "typescript", "ts"):
                 kws = (r'\b(const|let|var|function|return|if|else|for|while|'
                        r'class|import|export|from|async|await|new|this|typeof|'
                        r'true|false|null|undefined|try|catch|finally|throw|'
                        r'switch|case|break|continue|default)\b')
-                safe = _re.sub(kws,
-                    r'<span style="color:#ff7b72;">\1</span>', safe)
-                safe = _re.sub(r'(&#x27;[^&#]*&#x27;|&quot;[^&]*&quot;|`[^`]*`)',
-                    r'<span style="color:#a5d6ff;">\1</span>', safe)
-                safe = _re.sub(r'(//[^\n]*)',
-                    r'<span style="color:#6e7681;">\1</span>', safe)
-                safe = _re.sub(r'\b(\d+\.?\d*)\b',
-                    r'<span style="color:#f2cc60;">\1</span>', safe)
-            # Add line numbers
-            html_lines = safe.split("\n")
-            numbered = []
-            for i, line in enumerate(html_lines, 1):
-                num = f'<span style="color:#3a6080;user-select:none;">{i:3d}  </span>'
-                numbered.append(num + line)
-            return "\n".join(numbered)
+                tokens = tokenize(code_str, is_python=False)
+                out = []
+                for kind, val in tokens:
+                    if kind == 'str':
+                        out.append(f'<span style="color:#a5d6ff;">{_html.escape(val)}</span>')
+                    elif kind == 'comment':
+                        out.append(f'<span style="color:#6e7681;font-style:italic;">{_html.escape(val)}</span>')
+                    else:
+                        out.append(apply_kw(val, kws, False))
+                result = "".join(out)
 
-        highlighted = highlight(code, lang.lower() if lang else "")
-        code_lbl = QLabel()
-        code_lbl.setTextFormat(Qt.RichText)
-        code_lbl.setText(
-            f'<pre style="font-family:Consolas,monospace;font-size:11px;'
-            f'line-height:1.6;margin:0;padding:12px 14px;">{highlighted}</pre>')
-        code_lbl.setWordWrap(False)
-        code_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        code_lbl.setStyleSheet(
-            "QLabel { color:#e6edf3; background:transparent; border:none; }")
-        vl.addWidget(code_lbl)
+            else:
+                # No highlighting — just escape
+                result = _html.escape(code_str)
+
+            # Build line-numbered rows
+            rows = result.split("\n")
+            html_rows = []
+            for i, row in enumerate(rows, 1):
+                num = (f'<span style="color:#3a6080;user-select:none;'
+                       f'padding-right:14px;">{i:3d}</span>')
+                html_rows.append(
+                    f'<div style="white-space:pre;line-height:1.7;">{num}{row}</div>'
+                )
+            return "".join(html_rows)
+
+        highlighted = highlight(code, lang if lang else "")
+
+        # ── QTextEdit renders HTML properly (QLabel cannot) ───
+        from PySide6.QtWidgets import QTextEdit
+        editor = QTextEdit()
+        editor.setReadOnly(True)
+        editor.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        editor.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        editor.setStyleSheet("""
+            QTextEdit {
+                background: #0a0e1a;
+                color: #e6edf3;
+                border: none;
+                padding: 10px 14px;
+                font-family: Consolas, 'Courier New', monospace;
+                font-size: 11px;
+            }
+            QScrollBar:horizontal {
+                height: 6px; background: #0a0e1a;
+            }
+            QScrollBar::handle:horizontal {
+                background: #1a3050; border-radius: 3px;
+            }
+            QScrollBar:vertical {
+                width: 6px; background: #0a0e1a;
+            }
+            QScrollBar::handle:vertical {
+                background: #1a3050; border-radius: 3px;
+            }
+        """)
+        editor.setHtml(
+            f'<div style="font-family:Consolas,monospace;font-size:11px;">'
+            f'{highlighted}</div>'
+        )
+
+        # Size from line count — document().size() is 0 before widget is shown
+        LINE_H   = 18   # px per line at font-size 11px, line-height 1.65
+        PADDING  = 24   # top + bottom padding
+        n        = code.count("\n") + 1
+        height   = min(n * LINE_H + PADDING, 400)
+        editor.setFixedHeight(height)
+
+        vl.addWidget(editor)
         return frame
 
     def _small_btn(self, label, slot) -> QPushButton:
@@ -2144,9 +2226,8 @@ class BackgroundWakeListener(QThread):
 
 class WakeWordThread(QThread):
     wake    = Signal()
-    command = Signal(str)   # direct command — execute immediately
+    command = Signal(str)
 
-    # Wake words — just to activate listening mode
     WAKE_WORDS = [
         "hey strix", "ok strix", "wake up strix", "strix wake up",
         "yo strix", "open strix", "strix open",
@@ -2155,14 +2236,13 @@ class WakeWordThread(QThread):
         "hello strix", "hi strix", "strix hello",
     ]
 
-    # Pure wake words — trigger WITHOUT requiring "strix" in text
     PURE_WAKE_WORDS = [
         "wake up", "hey strix", "ok strix", "yo strix",
         "strix wake up", "wake up strix",
     ]
 
-    # Action prefixes — execute directly WITHOUT needing "strix" first
     ACTION_PREFIXES = (
+        # English
         "open ", "play ", "launch ", "start ", "run ",
         "close ", "search for ", "find ", "go to ",
         "create ", "make a ", "make ", "show ",
@@ -2173,15 +2253,42 @@ class WakeWordThread(QThread):
         "work time", "work mode", "coding time",
         "show anime", "watch anime",
         "shutdown", "shut down", "kill", "kill strix",
+        "pause", "stop music", "next track", "previous track",
+        # Hindi (Google en-IN returns these as-is in Latin script)
+        "kholo ", "bajao ", "band karo", "chalu karo",
+        "dikhao ", "gaana bajao",
+        # Marathi (Latin)
+        "ugad ", "vaajav ", "thambav", "band kar",
+        "daakhav ", "sang ", "gana lav",
     )
+
+    # Devanagari → Latin command map
+    # Fixes: Google mr-IN/hi returns script like "प्ले" instead of "play"
+    DEVA_FIX = {
+        "प्ले":     "play",
+        "खोलो":    "open",
+        "बंद करो":  "close",
+        "बजाओ":    "play",
+        "दिखाओ":   "show",
+        "बताओ":    "tell me",
+        "रोको":    "stop",
+        "रुको":    "stop",
+        "अगला":    "next",
+        "पिछला":   "previous",
+        "उघड":     "open",
+        "वाजव":    "play",
+        "थांबव":   "stop",
+        "दाखव":    "show",
+        "सांग":    "tell me",
+    }
 
     def __init__(self):
         super().__init__()
         self._active        = True
         self._paused        = False
-        self._hard_muted    = False   # True while TTS is speaking
-        self._music_playing = False   # True while Spotify is playing
-        self._noise_floor   = 2500    # calibrated at startup
+        self._hard_muted    = False
+        self._music_playing = False
+        self._noise_floor   = 2500
 
     def pause(self):          self._paused = True
     def resume(self):         self._paused = False
@@ -2194,14 +2301,16 @@ class WakeWordThread(QThread):
         self._active = False
         self.quit()
 
+    def _fix_devanagari(self, text: str) -> str:
+        """Replace any Devanagari command words with their Latin equivalent."""
+        for deva, latin in self.DEVA_FIX.items():
+            text = text.replace(deva, latin)
+        return text.strip()
+
     def _is_action_command(self, text: str) -> bool:
-        """Returns True if text is a direct command.
-        Checks startswith, then strips common filler words and checks again."""
         tl = text.lower().strip()
-        # Direct match
         if any(tl.startswith(p) for p in self.ACTION_PREFIXES):
             return True
-        # Strip filler words (Google sometimes prepends these)
         for f in ("can you ", "please ", "hey ", "could you ",
                   "i want to ", "i need to ", "strix ", "strix, "):
             if tl.startswith(f):
@@ -2213,98 +2322,115 @@ class WakeWordThread(QThread):
     def run(self):
         try:
             import speech_recognition as sr
-            r = sr.Recognizer()
-            r.energy_threshold         = 2500
-            r.pause_threshold          = 0.5
-            r.dynamic_energy_threshold = False
+        except ImportError:
+            print("[Wake] speech_recognition not installed — wake disabled")
+            return
+
+        print("[Wake] Mode: Google Speech (en-IN)")
+
+        r = sr.Recognizer()
+        r.energy_threshold         = 2500
+        r.pause_threshold          = 0.5
+        r.dynamic_energy_threshold = False
+
+        # ── Calibrate once ────────────────────────────────────────
+        try:
+            with sr.Microphone() as src:
+                r.adjust_for_ambient_noise(src, duration=1.0)
+                r.energy_threshold = max(r.energy_threshold, 2000)
+                self._noise_floor  = r.energy_threshold
+                print(f"[Wake] Threshold set to {r.energy_threshold:.0f}")
+                print("[Wake] Listening...")
+        except Exception as e:
+            print(f"[Wake] Mic calibration error: {e}")
+            self._noise_floor = 2500
+
+        # ── Listen loop ───────────────────────────────────────────
+        while self._active:
+            if self._paused or self._hard_muted:
+                time.sleep(0.15)
+                continue
+
+            r.energy_threshold = (
+                max(self._noise_floor * 2.5, 5500)
+                if self._music_playing else self._noise_floor
+            )
+
+            # Record one phrase
             try:
                 with sr.Microphone() as src:
-                    r.adjust_for_ambient_noise(src, duration=1.0)
-                    r.energy_threshold = max(r.energy_threshold, 2000)
-                    self._noise_floor  = r.energy_threshold
-                    print(f"[Wake] Threshold set to {r.energy_threshold:.0f}")
-            except Exception:
-                self._noise_floor = 2500
+                    plimit = 3 if self._music_playing else 5
+                    audio  = r.listen(src, timeout=2, phrase_time_limit=plimit)
+            except sr.WaitTimeoutError:
+                continue
+            except Exception as e:
+                print(f"[Wake] Mic error: {e}")
+                time.sleep(0.3)
+                continue
 
-            while self._active:
-                if self._paused or self._hard_muted:
-                    time.sleep(0.15)
+            if not self._active or self._hard_muted:
+                break
+
+            # Transcribe — en-IN only (fast, single API call)
+            text = ""
+            try:
+                raw = r.recognize_google(audio, language="en-IN", show_all=True)
+                if isinstance(raw, dict) and raw.get("alternative"):
+                    text = max(
+                        (a.get("transcript", "") for a in raw["alternative"]),
+                        key=lambda t: len(t.split()),
+                        default=""
+                    ).lower().strip()
+                elif isinstance(raw, str):
+                    text = raw.lower().strip()
+            except sr.UnknownValueError:
+                continue
+            except sr.RequestError as e:
+                print(f"[Wake] Google error: {e}")
+                time.sleep(1)
+                continue
+            except Exception as e:
+                print(f"[Wake] Transcribe error: {e}")
+                continue
+
+            if not text:
+                continue
+
+            # Fix Devanagari slipthrough (e.g. "प्ले CO2" → "play CO2")
+            text = self._fix_devanagari(text)
+            if not text:
+                continue
+
+            # Music bleed guard
+            if self._music_playing:
+                if len(text.split()) > 4:
+                    continue
+                MUSIC_CMDS = {
+                    "pause","stop","skip","next","previous","resume",
+                    "play","mute","strix","hey strix",
+                    "stop music","pause music",
+                }
+                if not any(c in text for c in MUSIC_CMDS):
                     continue
 
-                # Music playing — raise threshold so speaker audio can't trigger mic
-                if self._music_playing:
-                    r.energy_threshold = max(self._noise_floor * 2.5, 5500)
-                else:
-                    r.energy_threshold = self._noise_floor
+            # Echo / ambient guard
+            has_cmd  = self._is_action_command(text)
+            has_wake = any(w in text for w in self.PURE_WAKE_WORDS) or "strix" in text
+            if not has_cmd and not has_wake and len(text.split()) > 6:
+                continue
 
-                try:
-                    with sr.Microphone() as src:
-                        plimit = 3 if self._music_playing else 6
-                        audio  = r.listen(src, timeout=2, phrase_time_limit=plimit)
+            print(f"[Wake] Heard: '{text}'")
 
-                    if not self._active or self._hard_muted:
-                        break
-
-                    raw  = r.recognize_google(audio, language="en-IN", show_all=True)
-                    text = ""
-                    if isinstance(raw, dict) and raw.get("alternative"):
-                        alts = raw["alternative"]
-                        # Prefer longest transcript — captures full command
-                        text = max(
-                            (a.get("transcript","") for a in alts),
-                            key=lambda t: len(t.split()),
-                            default=""
-                        ).lower().strip()
-                    elif isinstance(raw, str):
-                        text = raw.lower().strip()
-
-                    if not text:
-                        continue
-
-                    # ── Music self-hearing guard ──────────────────────────────
-                    # When music is playing: 4+ word result = song lyric, discard
-                    if self._music_playing:
-                        words = text.split()
-                        if len(words) > 4:
-                            continue
-                        music_cmds = {
-                            "pause", "stop", "skip", "next", "previous", "resume",
-                            "unpause", "play", "volume up", "volume down",
-                            "louder", "quieter", "mute", "strix",
-                            "stop music", "pause music", "stop the music",
-                            "pause the song", "stop the song", "hey strix",
-                        }
-                        if not any(cmd in text for cmd in music_cmds):
-                            continue   # music bleed — ignore
-
-                    # ── General self-echo guard ───────────────────────────────
-                    # Long audio with no command/wake word = TTS reverb or ambient
-                    words    = text.split()
-                    has_cmd  = self._is_action_command(text)
-                    has_wake = (any(w in text for w in self.PURE_WAKE_WORDS)
-                                or "strix" in text)
-                    if not has_cmd and not has_wake and len(words) > 6:
-                        continue   # TTS echo or ambient — discard
-
-                    if len(text) > 2:
-                        print(f"[Wake] Heard: {text}")
-
-                    if has_cmd:
-                        print(f"[Wake] Direct command → {text}")
-                        self.command.emit(text)
-                    elif any(w in text for w in self.PURE_WAKE_WORDS):
-                        print(f"[Wake] Wake word → {text}")
-                        self.wake.emit()
-                    elif "strix" in text and any(w in text for w in self.WAKE_WORDS):
-                        print(f"[Wake] Wake word → {text}")
-                        self.wake.emit()
-
-                except sr.WaitTimeoutError:
-                    pass
-                except Exception:
-                    pass
-        except ImportError:
-            print("[Wake] speech_recognition not installed")
+            # Dispatch
+            if has_cmd:
+                print(f"[Wake] → command: {text}")
+                self.command.emit(text)
+            elif any(w in text for w in self.PURE_WAKE_WORDS):
+                print("[Wake] → wake word")
+                self.wake.emit()
+            elif "strix" in text and any(w in text for w in self.WAKE_WORDS):
+                print("[Wake] → wake word")
+                self.wake.emit()
 
 
 # ── Stat card ─────────────────────────────────────────────────
@@ -2536,7 +2662,7 @@ class StrixWindow(QMainWindow):
         inp.addWidget(gt)
 
         self.input_field=QLineEdit()
-        self.input_field.setPlaceholderText("Type or speak a command...  open/play/ugad/bajao/vaajav + target runs instantly")
+        self.input_field.setPlaceholderText("Talk to STRIX...  or type 'open X / play X' to run instantly")
         self.input_field.returnPressed.connect(self._on_send)
         self.input_field.textChanged.connect(self._on_text_changed)
         inp.addWidget(self.input_field)
@@ -2754,14 +2880,14 @@ class StrixWindow(QMainWindow):
         self._wake_thread.wake.connect(self._on_wake)
         self._wake_thread.command.connect(self._on_wake_command)
         self._wake_thread.start()
-        # Watchdog — unstick the wake thread every 8s if input is free
+        # Watchdog — unstick the wake thread every 2s
         self._wake_watchdog = QTimer(self)
         self._wake_watchdog.timeout.connect(self._wake_watchdog_tick)
-        self._wake_watchdog.start(8000)
+        self._wake_watchdog.start(2000)
 
     def _wake_watchdog_tick(self):
-        """Periodically force-unstick wake thread if UI is idle."""
-        if self._wake_thread and self.input_field.isEnabled():
+        """Always keep wake thread running — clear any stale paused/muted state."""
+        if self._wake_thread:
             if self._wake_thread._paused or self._wake_thread._hard_muted:
                 self._wake_thread._paused     = False
                 self._wake_thread._hard_muted = False
@@ -2851,9 +2977,9 @@ class StrixWindow(QMainWindow):
             return
         if self._arc:
             self._arc.set_speaking(True)
-        # Hard-mute mic while speaking — stops STRIX hearing itself
-        if self._wake_thread:
-            self._wake_thread.hard_mute()
+        # NOTE: do NOT hard_mute the wake thread here.
+        # The wake thread's energy_threshold (2000+) already blocks TTS audio.
+        # hard_mute was causing direct commands to be silently dropped.
         t = TTSThread(self.tts, text)
         t.finished.connect(self._on_tts_done)
         t.finished.connect(lambda: self._tts_threads.remove(t) if t in self._tts_threads else None)
@@ -2865,24 +2991,12 @@ class StrixWindow(QMainWindow):
         if not alive:
             if self._arc:
                 self._arc.set_speaking(False)
-            # 1.5s delay — lets TTS audio fully decay before mic reopens
-            QTimer.singleShot(1500, self._resume_wake)
-
-    def _resume_wake(self):
-        """Unmute mic after TTS audio has fully decayed."""
-        if self._wake_thread:
-            self._wake_thread.hard_unmute()
-            self._wake_thread.resume()
-            # Safety — force _paused=False in case it got stuck
-            self._wake_thread._paused = False
 
     def _send(self, text):
         self.input_field.setText(text); self._on_send()
 
-    # Keywords that execute immediately when typed or spoken — no Enter needed
-    # English + Hindi + Marathi command prefixes
+    # Keywords that should execute immediately when typed (no Enter needed for voice)
     AUTO_EXEC_PREFIXES = (
-        # ── English ───────────────────────────────────────────
         "open ", "play ", "launch ", "start ", "run ",
         "close ", "kill ", "search for ", "find ",
         "create ", "make ", "go to ", "visit ",
@@ -2890,48 +3004,21 @@ class StrixWindow(QMainWindow):
         "create a python", "create a javascript", "create a html",
         "create a file", "create a script",
         "locate ", "where is ", "find this ", "find my ",
-        "work time", "work mode", "coding time", "dev mode",
+        "work time", "work mode", "coding time",
         "show anime", "watch anime", "open anime",
         "shutdown", "shut down", "bye strix", "goodnight",
-        "show ", "display ", "get ",
-        "pause", "stop music", "next track", "previous track",
-        # ── Hindi ─────────────────────────────────────────────
-        "kholo ", "bajao ", "band karo", "chalu karo",
-        "dikhao ", "batao ", "rok ", "ruk ",
-        "agla ", "pichla ", "gaana bajao",
-        # ── Marathi ───────────────────────────────────────────
-        "ugad ", "ugaad ", "ughad ",
-        "vaajav ", "gana lav", "gaana lav",
-        "thambav", "band kar",
-        "daakhav ", "sang ", "saang ",
-        "shod ", "shodh ", "banav ",
-        "kaam chalu", "kaam suru",
     )
 
     def _on_text_changed(self, text: str):
-        """Auto-submit typed action commands — no Enter needed."""
+        """Auto-submit if user typed a complete action command."""
         tl = text.lower().strip()
-
-        # Instant exec — complete short commands (e.g. "open chrome", "play spotify")
-        # If text starts with action prefix AND has a clear target word, fire immediately
-        INSTANT_TARGETS = {
-            "chrome", "youtube", "spotify", "github", "gmail", "discord",
-            "notepad", "calculator", "vscode", "cmd", "powershell",
-            "whatsapp", "telegram", "netflix", "reddit", "chatgpt", "gemini",
-            "anime", "work mode", "work time", "coding time",
-        }
+        # Check if text starts with a known action prefix and has a target word
         for prefix in self.AUTO_EXEC_PREFIXES:
-            if tl.startswith(prefix):
-                after = tl[len(prefix):].strip()
-                # If the target is a known app/site — fire instantly (0ms)
-                if any(t in after for t in INSTANT_TARGETS):
-                    self._auto_exec_timer.stop()
-                    self._auto_exec_timer.start(0)
-                    return
-                # Otherwise wait 0.8s after user stops typing
-                if len(after) > 2:
-                    self._auto_exec_timer.start(800)
-                    return
+            if tl.startswith(prefix) and len(tl) > len(prefix) + 2:
+                # Has content after the prefix — don't auto-send yet, let user finish
+                # Only auto-send if user stops typing for 1.5s (handled by timer)
+                self._auto_exec_timer.start(1500)
+                return
         self._auto_exec_timer.stop()
 
     def _on_send(self):
@@ -2973,13 +3060,7 @@ class StrixWindow(QMainWindow):
         self.input_field.setEnabled(False)
         self.stop_btn.setVisible(True)
         self.stop_btn.trigger_glitch()
-        # Only pause wake listener for real LLM chat queries
-        # Action commands (open/play/find/etc.) are instant — no need to pause
-        tl_check = text.lower()
-        _is_action = any(tl_check.startswith(p)
-                         for p in WakeWordThread.ACTION_PREFIXES)
-        if not _is_action and self._wake_thread:
-            self._wake_thread.pause()
+        # Never pause wake thread — watchdog keeps it alive regardless
 
         # Show typing indicator with detected model
         detected = self._detect_model_for_display(text)
@@ -3124,7 +3205,9 @@ class StrixWindow(QMainWindow):
         self.voice_btn.trigger_glitch()
         self.wave.set_active(True)
         self.status_bar.setText("LISTENING... SPEAK NOW")
-        if self._wake_thread: self._wake_thread.pause()
+        # NOTE: do NOT pause wake thread here.
+        # Wake thread and voice button use separate mic opens — they don't block each other.
+        # Pausing wake here was the reason direct commands never fired.
 
         def _listen():
             try:
@@ -3139,25 +3222,11 @@ class StrixWindow(QMainWindow):
 
     @Slot()
     def _on_voice_done(self):
-        text = getattr(self, "_voice_result", "")
-        self.voice_btn.setText("◉  VOICE")
-        self.voice_btn.setEnabled(True)
+        text=getattr(self,"_voice_result","")
+        self.voice_btn.setText("VOICE"); self.voice_btn.setEnabled(True)
         self.wave.set_active(False)
-        if self._wake_thread:
-            self._wake_thread.resume()
-        if text:
-            self.input_field.setText(text)
-            # Direct command words — execute immediately, no extra wait
-            tl = text.lower().strip()
-            is_direct = any(tl.startswith(p) for p in self.AUTO_EXEC_PREFIXES)
-            if is_direct:
-                print(f"[Voice] Direct command detected: '{text}' — executing now")
-                self._on_send()
-            else:
-                # Regular query — still auto-submit but show text first
-                self._on_send()
-        else:
-            self.status_bar.setText("VOICE: NOTHING HEARD — TRY AGAIN")
+        if text: self.input_field.setText(text); self._on_send()
+        else: self.status_bar.setText("VOICE: NOTHING HEARD. TRY AGAIN")
 
     def _clear(self):
         layout = self.chat_area._layout

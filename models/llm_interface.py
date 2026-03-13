@@ -1,75 +1,52 @@
 """
-models/llm_interface.py — STRIX v4.1
+models/llm_interface.py — STRIX v3.0
 =======================================
-UPGRADE: Every task type gets its own LLM model assignment.
-Each model is chosen for speed vs intelligence tradeoff:
-
-  phi3         → FAST: chat, greetings, quick answers, music commands,
-                        system queries, direct tool calls
-  llama3.1     → SMART: reasoning, planning, complex questions,
-                          analysis, explanations
-  qwen2.5-coder → CODE: all code tasks (Python, Java, C++, web, etc.)
-
-Task-to-model mapping:
-  chat       → phi3          (fast 2-sentence replies)
-  music      → phi3          (just parse song name, no thinking needed)
-  quick      → phi3          (system status, jokes, ip, weather response)
-  coding     → qwen2.5-coder (any programming language)
-  frontend   → qwen2.5-coder (HTML/CSS/React)
-  backend    → qwen2.5-coder (APIs, databases)
-  reasoning  → llama3.1      (explain, compare, advise)
-  planning   → llama3.1      (multi-step task decomposition)
-  search     → phi3          (format search results)
+Multi-LLM pipeline:
+  phi3       → fast chat / quick answers
+  llama3.1   → reasoning / planning / complex questions
+  qwen2.5-coder → all code tasks
 """
 
-import os, time, json, requests
+import os, sys, time, json, requests
+
+# ── Load .env from E:\Strix\.env (root of project) ───────────
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))   # models/
+_ROOT_DIR = os.path.dirname(_THIS_DIR)                   # E:\Strix\
+_ENV_PATH = os.path.join(_ROOT_DIR, ".env")
+
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    if os.path.exists(_ENV_PATH):
+        load_dotenv(_ENV_PATH, override=True)
+        print(f"[LLM] Loaded .env from {_ENV_PATH}")
+    else:
+        load_dotenv()
+        print(f"[LLM] .env not found at {_ENV_PATH} — using defaults")
 except ImportError:
     pass
 
+# Ensure brain/ and root are importable
+for _p in (_ROOT_DIR, os.path.join(_ROOT_DIR, "brain")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-# ── Model assignments — override from .env or GUI ─────────────
+# ── Model assignments ─────────────────────────────────────────
 MODELS = {
-    # Fast tasks (phi3)
-    "chat":     os.getenv("CHAT_MODEL",     "phi3:latest"),
-    "music":    os.getenv("MUSIC_MODEL",    "phi3:latest"),   # NEW
-    "quick":    os.getenv("QUICK_MODEL",    "phi3:latest"),   # NEW
-    "search":   os.getenv("SEARCH_MODEL",   "phi3:latest"),   # NEW
-
-    # Code tasks (qwen2.5-coder)
-    "coding":   os.getenv("CODING_MODEL",   "qwen2.5-coder:latest"),
-    "frontend": os.getenv("FRONTEND_MODEL", "qwen2.5-coder:latest"),
-    "backend":  os.getenv("BACKEND_MODEL",  "qwen2.5-coder:latest"),
-
-    # Complex tasks (llama3.1)
-    "reasoning":os.getenv("REASONING_MODEL","llama3.1:latest"),
-    "planning": os.getenv("PLANNING_MODEL", "llama3.1:latest"),
+    "chat":      os.getenv("CHAT_MODEL",      "phi3:latest"),
+    "reasoning": os.getenv("REASONING_MODEL", "llama3.1:latest"),
+    "coding":    os.getenv("CODING_MODEL",    "qwen2.5-coder:7b"),
+    "frontend":  os.getenv("FRONTEND_MODEL",  "qwen2.5-coder:7b"),
+    "backend":   os.getenv("BACKEND_MODEL",   "qwen2.5-coder:7b"),
+    "planning":  os.getenv("PLANNING_MODEL",  "llama3.1:latest"),
 }
+print(f"[LLM] Models loaded: coding={MODELS['coding']} reasoning={MODELS['reasoning']}")
 
 # Runtime overrides from GUI dropdown
 _overrides = {}
 
-# Generation options — tuned per model type
-_OPTIONS_FAST = {
-    "num_ctx":        1024,   # smaller context = faster for phi3
-    "num_predict":    256,    # short replies for chat/quick tasks
-    "temperature":    0.6,
-    "top_p":          0.9,
-    "repeat_penalty": 1.1,
-}
-
-_OPTIONS_CODE = {
-    "num_ctx":        4096,   # larger context for code tasks
-    "num_predict":    1024,
-    "temperature":    0.2,    # low temp = precise code
-    "top_p":          0.95,
-    "repeat_penalty": 1.1,
-}
-
-_OPTIONS_REASON = {
+_OPTIONS_CHAT = {
     "num_ctx":        2048,
     "num_predict":    512,
     "temperature":    0.7,
@@ -77,17 +54,20 @@ _OPTIONS_REASON = {
     "repeat_penalty": 1.1,
 }
 
-# Map model role → options
-_ROLE_OPTIONS = {
-    "chat":     _OPTIONS_FAST,
-    "music":    _OPTIONS_FAST,
-    "quick":    _OPTIONS_FAST,
-    "search":   _OPTIONS_FAST,
-    "coding":   _OPTIONS_CODE,
-    "frontend": _OPTIONS_CODE,
-    "backend":  _OPTIONS_CODE,
-    "reasoning":_OPTIONS_REASON,
-    "planning": _OPTIONS_REASON,
+_OPTIONS_CODE = {
+    "num_ctx":        4096,
+    "num_predict":    2048,   # code needs more tokens
+    "temperature":    0.2,    # lower temp = more deterministic code
+    "top_p":          0.95,
+    "repeat_penalty": 1.05,
+}
+
+_OPTIONS_REASON = {
+    "num_ctx":        4096,
+    "num_predict":    1024,
+    "temperature":    0.5,
+    "top_p":          0.9,
+    "repeat_penalty": 1.1,
 }
 
 
@@ -101,33 +81,27 @@ def set_model_override(key: str, model: str):
     _overrides[key] = model
 
 
-def get_model_options(key: str) -> dict:
-    """Get generation options for a role."""
-    return _ROLE_OPTIONS.get(key, _OPTIONS_REASON)
-
-
-def _trim_prompt(prompt: str, max_chars: int = 3000) -> str:
+def _trim_prompt(prompt: str, max_chars: int = 2000) -> str:
     if len(prompt) <= max_chars:
         return prompt
     return "...[trimmed]...\n" + prompt[-max_chars:]
 
 
 def _call_ollama(model: str, prompt: str, system: str = "",
-                 stream: bool = False, role: str = "reasoning"):
+                 stream: bool = False, options: dict = None):
     """Core Ollama call — supports streaming and non-streaming."""
-    url     = f"{OLLAMA_BASE_URL}/api/generate"
-    options = get_model_options(role)
+    url = f"{OLLAMA_BASE_URL}/api/generate"
     payload = {
         "model":   model,
         "prompt":  _trim_prompt(prompt),
         "system":  system,
         "stream":  stream,
-        "options": options,
+        "options": options or _OPTIONS_CHAT,
     }
     try:
         if stream:
             return _stream_ollama(url, payload)
-        r = requests.post(url, json=payload, timeout=90)
+        r = requests.post(url, json=payload, timeout=60)
         r.raise_for_status()
         return r.json().get("response", "").strip()
     except requests.exceptions.ConnectionError:
@@ -144,7 +118,7 @@ def _call_ollama(model: str, prompt: str, system: str = "",
 def _stream_ollama(url: str, payload: dict):
     """Generator that yields tokens one by one."""
     try:
-        with requests.post(url, json=payload, stream=True, timeout=90) as r:
+        with requests.post(url, json=payload, stream=True, timeout=60) as r:
             r.raise_for_status()
             for line in r.iter_lines():
                 if line:
@@ -167,56 +141,42 @@ def call_chat_model(prompt: str, stream: bool = False):
     """phi3 — fast replies, greetings, quick questions."""
     model = get_model("chat")
     print(f"[LLM] CHAT → {model}")
-    return _call_ollama(model, prompt, stream=stream, role="chat")
-
-
-def call_music_model(prompt: str, stream: bool = False):
-    """phi3 — parse music commands, song names. Fast."""
-    model = get_model("music")
-    print(f"[LLM] MUSIC → {model}")
-    return _call_ollama(model, prompt, stream=stream, role="music")
-
-
-def call_quick_model(prompt: str, stream: bool = False):
-    """phi3 — quick tool result formatting (weather, system, jokes)."""
-    model = get_model("quick")
-    print(f"[LLM] QUICK → {model}")
-    return _call_ollama(model, prompt, stream=stream, role="quick")
+    return _call_ollama(model, prompt, stream=stream, options=_OPTIONS_CHAT)
 
 
 def call_reasoning_model(prompt: str, system: str = "", stream: bool = False):
-    """llama3.1 — complex reasoning, analysis, deep questions."""
+    """llama3.1 — complex reasoning, planning, deep questions."""
     model = get_model("reasoning")
     print(f"[LLM] REASONING → {model}")
-    return _call_ollama(model, prompt, system, stream=stream, role="reasoning")
+    return _call_ollama(model, prompt, system, stream=stream, options=_OPTIONS_REASON)
 
 
 def call_coding_model(prompt: str, system: str = "", stream: bool = False):
     """qwen2.5-coder — Python, Java, C++, algorithms."""
     model = get_model("coding")
     print(f"[LLM] CODING → {model}")
-    return _call_ollama(model, prompt, system, stream=stream, role="coding")
+    return _call_ollama(model, prompt, system, stream=stream, options=_OPTIONS_CODE)
 
 
 def call_frontend_model(prompt: str, stream: bool = False):
     """qwen2.5-coder — HTML, CSS, React, UI code."""
     model = get_model("frontend")
     print(f"[LLM] FRONTEND → {model}")
-    return _call_ollama(model, prompt, stream=stream, role="frontend")
+    return _call_ollama(model, prompt, stream=stream, options=_OPTIONS_CODE)
 
 
 def call_backend_model(prompt: str, stream: bool = False):
     """qwen2.5-coder — APIs, databases, server code."""
     model = get_model("backend")
     print(f"[LLM] BACKEND → {model}")
-    return _call_ollama(model, prompt, stream=stream, role="backend")
+    return _call_ollama(model, prompt, stream=stream, options=_OPTIONS_CODE)
 
 
 def call_planning_model(prompt: str, stream: bool = False):
     """llama3.1 — task decomposition and planning."""
     model = get_model("planning")
     print(f"[LLM] PLANNING → {model}")
-    return _call_ollama(model, prompt, stream=stream, role="planning")
+    return _call_ollama(model, prompt, stream=stream, options=_OPTIONS_REASON)
 
 
 # ── Backwards compat ──────────────────────────────────────────
@@ -224,7 +184,7 @@ def call_model_stream(model: str, prompt: str, system: str = ""):
     return _stream_ollama(
         f"{OLLAMA_BASE_URL}/api/generate",
         {"model": model, "prompt": _trim_prompt(prompt),
-         "system": system, "stream": True, "options": _OPTIONS_REASON}
+         "system": system, "stream": True, "options": _OPTIONS}
     )
 
 

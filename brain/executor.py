@@ -100,14 +100,16 @@ def _create_file_at_path(params: dict) -> str:
     if not path:
         return "No file path specified."
     try:
-        # Make sure parent folder exists
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        parent = os.path.dirname(path)
+        # Only makedirs if parent is a real non-root directory that doesn't exist
+        if parent and parent != path and not os.path.exists(parent):
+            os.makedirs(parent, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         name = os.path.basename(path)
-        return f"File '{name}' created with starter code."
+        return f"File '{name}' created at {parent or path}."
     except PermissionError:
-        return f"Permission denied creating file at {path}."
+        return f"Permission denied creating file at {path}. Try running STRIX as Admin."
     except Exception as e:
         return f"Could not create file: {e}"
 
