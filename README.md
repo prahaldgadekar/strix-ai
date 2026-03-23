@@ -38,7 +38,7 @@
 
 ## Screenshot
 
-![STRIX GUI](screenshot.png)
+![STRIX GUI](gui_screensshort.png)
 
 > *STRIX HUD — Communication Channel, System Metrics, Quick Access panel, and the tactical radar display running live on Windows.*
 
