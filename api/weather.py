@@ -14,7 +14,7 @@ load_dotenv()
 
 API_KEY   = os.getenv("OPENWEATHER_API_KEY", "")
 BASE_URL  = "https://api.openweathermap.org/data/2.5/weather"
-DEFAULT_CITY = os.getenv("DEFAULT_CITY", "Pune")   # change to your city
+DEFAULT_CITY = os.getenv("DEFAULT_CITY", "pune")   # change to your city
 
 _cache = {}
 CACHE_SECONDS = 600  # 10 minutes

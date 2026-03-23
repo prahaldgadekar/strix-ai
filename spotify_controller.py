@@ -34,7 +34,11 @@ PLAYLIST_ID  = "6dhvXHh0skhIQm2tL0uJYP"
 _sp = None
 
 def _get_spotipy():
-    """Get or create a Spotipy client. Returns None if no credentials."""
+    """
+    Get Spotipy client for SEARCH ONLY (no OAuth needed).
+    Uses Client Credentials flow — no browser popup, no manual paste.
+    Returns None if no credentials.
+    """
     global _sp
     if not (CLIENT_ID and CLIENT_SECRET):
         return None
@@ -42,14 +46,10 @@ def _get_spotipy():
         return _sp
     try:
         import spotipy
-        from spotipy.oauth2 import SpotifyOAuth
-        _sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        from spotipy.oauth2 import SpotifyClientCredentials
+        _sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
-            redirect_uri=REDIRECT_URI,
-            scope="user-modify-playback-state user-read-playback-state streaming",
-            cache_path=CACHE_PATH,
-            open_browser=False,
         ))
         return _sp
     except Exception as e:
@@ -57,11 +57,37 @@ def _get_spotipy():
         return None
 
 
+def _get_spotipy_oauth():
+    """
+    Get Spotipy client with OAuth — needed for pause/next/prev controls.
+    Opens browser for first-time login, caches token after that.
+    Only called for playback controls, never for play_song.
+    """
+    if not (CLIENT_ID and CLIENT_SECRET):
+        return None
+    try:
+        import spotipy
+        from spotipy.oauth2 import SpotifyOAuth
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            redirect_uri=REDIRECT_URI,
+            scope="user-modify-playback-state user-read-playback-state",
+            cache_path=CACHE_PATH,
+            open_browser=True,  # opens browser automatically, no manual paste
+        ))
+        return sp
+    except Exception as e:
+        print(f"[Spotify] OAuth init failed: {e}")
+        return None
+        return None
+
+
 # ── Playback Controls ─────────────────────────────────────────
 
 def pause_music() -> str:
     """Pause/Resume Spotify."""
-    sp = _get_spotipy()
+    sp = _get_spotipy_oauth()
     if sp:
         try:
             state = sp.current_playback()
@@ -89,7 +115,7 @@ def pause_music() -> str:
 
 def stop_music() -> str:
     """Stop Spotify completely."""
-    sp = _get_spotipy()
+    sp = _get_spotipy_oauth()
     if sp:
         try:
             sp.pause_playback()
@@ -104,7 +130,7 @@ def stop_music() -> str:
 
 def next_track() -> str:
     """Skip to next track."""
-    sp = _get_spotipy()
+    sp = _get_spotipy_oauth()
     if sp:
         try:
             sp.next_track()
@@ -126,7 +152,7 @@ def next_track() -> str:
 
 def prev_track() -> str:
     """Go to previous track."""
-    sp = _get_spotipy()
+    sp = _get_spotipy_oauth()
     if sp:
         try:
             sp.previous_track()
