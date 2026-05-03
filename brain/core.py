@@ -1,21 +1,24 @@
 """
-brain/core.py — STRIX v4.0
+brain/core.py — STRIX v4.1
 ============================
-Routing priority (top = highest):
+CHANGE: _classify_llm now routes coding/dev questions to "dev"
+        (lazy dev mode: copy-paste ready, no fluff, full boilerplate)
+
+Routing priority:
   1. Desktop/file/folder tasks  → ALWAYS direct tool, never LLM
   2. Multi-step planner         → complex requests
   3. Info tools                 → weather, news, system, etc
-  4. LLM routes                 → chat, reasoning, coding
+  4. LLM routes                 → chat, reasoning, dev (lazy-dev), coding
 """
 
 import os, sys, re
 try:
     from dotenv import load_dotenv
-    # .env is at E:\Strix\.env — one level up from brain/
     _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
     load_dotenv(_env_path)
 except ImportError:
-    pass  # dotenv not installed — values fall back to defaults
+    pass
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
@@ -31,8 +34,7 @@ WAKE_WORDS = [
     "start strix","launch strix","hello strix","hi strix",
 ]
 
-# ── Speech recognition corrections ──────────────────────────
-# Google Speech often mishears app names — fix before routing
+# ── Speech recognition corrections ───────────────────────────
 SPEECH_FIXES = [
     ("google home",         "google chrome"),
     ("open home",           "open chrome"),
@@ -60,7 +62,7 @@ SPEECH_FIXES = [
     ("u tube",              "youtube"),
     ("you toob",            "youtube"),
     ("git hub",             "github"),
-    ("git hut",             "github"),    # t/b confusion
+    ("git hut",             "github"),
     ("git hat",             "github"),
     ("git hot",             "github"),
     ("open git hut",        "open github"),
@@ -90,22 +92,7 @@ SPEECH_FIXES = [
     ("open the song",       "play song"),
     ("open this song",      "play song"),
     ("put on",              "play"),
-    # YouTube mishearings (Indian accent + Google Speech)
     ("open couture",        "open youtube"),
-    # pause/stop music mishearings
-    ("balls",               "pause"),
-    ("paul",                "pause"),
-    ("paws",                "pause"),
-    ("horse",               "pause"),
-    ("calls",               "pause"),
-    ("pause this",          "pause music"),
-    ("stop this",           "stop music"),
-    ("stop that",           "stop music"),
-    ("stop it",             "stop music"),
-    ("pause it",            "pause music"),
-    ("quite",               "quiet"),
-    ("be quiet",            "pause music"),
-    # folder mishearings — Google drops the F
     ("find older",          "find folder"),
     ("find a older",        "find folder"),
     ("find the older",      "find the folder"),
@@ -113,12 +100,10 @@ SPEECH_FIXES = [
     ("create older",        "create folder"),
     ("make older",          "make folder"),
     ("open older",          "open folder"),
-    # java mishearings
     ("cava",                "java"),
-    ("java practical",      "java practical"),   # keep correct
+    ("java practical",      "java practical"),
     ("kava",                "java"),
     ("hava",                "java"),
-    # Anime mishearings
     ("show aime",           "show anime"),
     ("show aim",            "show anime"),
     ("open aime",           "open anime"),
@@ -134,34 +119,26 @@ SPEECH_FIXES = [
     ("couture",             "youtube"),
     ("you two",             "youtube"),
     ("you too",             "youtube"),
-    # GitHub mishearings
     ("open get hub",        "open github"),
     ("open get up",         "open github"),
-    ("open get hub",        "open github"),
     ("get hub",             "github"),
     ("get up",              "github"),
-    # ChatGPT mishearings
     ("open chat gbd",       "open chatgpt"),
     ("open chat gb t",      "open chatgpt"),
     ("open shat gpt",       "open chatgpt"),
     ("chat gb t",           "chatgpt"),
     ("chat gbd",            "chatgpt"),
-    # Gemini mishearings
     ("jimmy knee",          "gemini"),
     ("jimminy",             "gemini"),
     ("jim any",             "gemini"),
-    # Discord mishearings
     ("this cord",           "discord"),
     ("disc court",          "discord"),
-    # WhatsApp mishearings
     ("what stop",           "whatsapp"),
     ("what's app",          "whatsapp"),
     ("what zap",            "whatsapp"),
-    # Spotify extra
     ("spot a pie",          "spotify"),
     ("spot a guy",          "spotify"),
     ("spit a fire",         "spotify"),
-    # Gmail mishearings — Google Speech often hears "gmail" as "email"/"mail"
     ("open email",          "open gmail"),
     ("open mail",           "open gmail"),
     ("open my email",       "open gmail"),
@@ -176,36 +153,30 @@ SPEECH_FIXES = [
     ("open g mail",         "open gmail"),
     ("open jee mail",       "open gmail"),
     ("open jamail",         "open gmail"),
-    # YouTube mishearings (extra)
     ("open you tube",       "open youtube"),
     ("open utube",          "open youtube"),
-    # ChatGPT mishearings
     ("open chat gpt",       "open chatgpt"),
     ("open chat g p t",     "open chatgpt"),
     ("open jet gpt",        "open chatgpt"),
-    # Song names — Google Speech drops numbers and mangles artist names
     ("play co ",            "play co2 "),
     ("play co$",            "play co2"),
     ("open co ",            "play co2 "),
-    ("play eminem",         "play eminem"),   # keep correct
+    ("play eminem",         "play eminem"),
     ("play mine",           "play eminem"),
     ("play my name",        "play eminem"),
     ("play minimum",        "play eminem"),
     ("play ameen",          "play eminem"),
     ("play enemy",          "play eminem"),
     ("play m&m",            "play eminem"),
-    ("play minecraft playlist", "play minecraft playlist"),  # keep correct
+    ("play minecraft playlist", "play minecraft playlist"),
 ]
 
-# Song-specific fix — catches "play co" → "play co2"
-# Google Speech drops trailing numbers from short names
 _SONG_NUMBER_FIXES = {
     "play co":    "play co2",
     "open co":    "play co2",
     "play co ":   "play co2",
 }
 
-# Known app names — fuzzy match these when speech garbles them
 _APP_NAMES = [
     "spotify", "chrome", "notepad", "calculator", "pycharm",
     "powershell", "discord", "telegram", "wallpaper engine",
@@ -214,7 +185,6 @@ _APP_NAMES = [
     "youtube", "github", "chatgpt", "gemini", "whatsapp",
 ]
 
-# Website/service names — more aggressive fuzzy matching (longer words, easy to mishear)
 _WEB_NAMES = {
     "youtube":  ["couture", "utube", "you two", "you too", "you tube", "you toob",
                  "utoo", "utwo", "u2", "yotube"],
@@ -228,17 +198,13 @@ _WEB_NAMES = {
 }
 
 def _web_name_fix(tl: str) -> str:
-    """Replace misheard website/service names."""
     for correct, mishearings in _WEB_NAMES.items():
         for m in mishearings:
             if m in tl:
-                print(f"[STRIX] Web name fix: '{m}' → '{correct}'")
                 tl = tl.replace(m, correct)
     return tl
 
 def _fuzzy_app_fix(tl: str) -> str:
-    """If a word is close to a known app name, replace it."""
-    # First apply web name fixes (they're more specific)
     tl = _web_name_fix(tl)
     words = tl.split()
     result = []
@@ -248,8 +214,6 @@ def _fuzzy_app_fix(tl: str) -> str:
         replaced = False
         for app in _APP_NAMES:
             if _edit_dist(word, app) <= 2 and len(word) >= 4:
-                if word != app:
-                    print(f"[STRIX] Fuzzy fix: '{word}' → '{app}'")
                 result.append(app)
                 replaced = True
                 break
@@ -259,7 +223,6 @@ def _fuzzy_app_fix(tl: str) -> str:
     return " ".join(result)
 
 def _edit_dist(a: str, b: str) -> int:
-    """Simple Levenshtein distance."""
     if abs(len(a) - len(b)) > 3: return 99
     m, n = len(a), len(b)
     dp = list(range(n + 1))
@@ -273,30 +236,19 @@ def _edit_dist(a: str, b: str) -> int:
 
 def _fix_speech(text: str) -> str:
     tl = text.lower().strip()
-
-    # Step 0 — song number fixes (Google drops trailing numbers like "co2"→"co")
     for wrong, right in _SONG_NUMBER_FIXES.items():
         if tl == wrong.strip() or tl == wrong.strip() + " ":
-            print(f"[STRIX] Song fix: '{tl}' → '{right}'")
             tl = right
             break
-
-    # Step 1 — exact phrase fixes
     for wrong, right in SPEECH_FIXES:
         if wrong in tl:
             tl = tl.replace(wrong, right)
-            print(f"[STRIX] Speech fix: '{wrong}' → '{right}'")
-
-    # Step 2 — fuzzy fix ONLY for app commands, NOT song play commands
-    # Reason: fuzzy fix can corrupt song/artist names
-    is_app_cmd = any(tl.startswith(w) for w in ["open ", "launch ", "start ", "run "])
+    is_app_cmd  = any(tl.startswith(w) for w in ["open ", "launch ", "start ", "run "])
     is_play_cmd = tl.startswith("play ")
     if is_app_cmd:
         tl = _fuzzy_app_fix(tl)
     elif is_play_cmd:
-        # Only run web_name_fix for play — skip fuzzy (protects song names)
         tl = _web_name_fix(tl)
-
     return tl
 
 
@@ -324,13 +276,11 @@ def _strip_wake_word(text):
     return text
 
 
-# ── Keyword sets ─────────────────────────────────────────────
-# ALL words that mean "create something on the filesystem"
 FILE_VERBS    = {"make","create","build","write","generate","add","put","new","give"}
 FILE_NOUNS    = {"file","folder","directory","project"}
 FILE_LANGS    = {"python","py","java","javascript","js","html","css","typescript",
                  "ts","cpp","c++","c","sql","react","node","php","kotlin","flutter"}
-DESKTOP_WORDS = {"desktop","desktopp","desktoppp","desk top"}   # typos too
+DESKTOP_WORDS = {"desktop","desktopp","desktoppp","desk top"}
 
 CODE_VERBS    = {"write","generate","create","make","build","show","give","code"}
 CODE_NOUNS    = {"code","program","function","class","script","algorithm","snippet"}
@@ -345,25 +295,36 @@ CHAT_WORDS    = {"hello","hi","hey","good morning","good night","good evening",
                  "ok","okay","bye","goodbye","nice","what is your name",
                  "are you","do you","can you"}
 
+# ── NEW: lazy dev trigger words ───────────────────────────────
+# These phrases signal "I want ready-to-use code, not theory"
+DEV_WORDS = {
+    "fix this", "fix my", "fix the", "debug", "error in",
+    "not working", "broken", "crashes", "bug in", "issue with",
+    "how to implement", "how do i make", "boilerplate", "template for",
+    "starter code", "full code", "complete code", "working code",
+    "copy paste", "ready to use", "example of", "example for",
+    "give me the full", "give me a working", "build me",
+    "make me a", "create me a", "write me the",
+    "how to set up", "setup", "install and use",
+    "how to connect", "how to integrate",
+}
+
 
 def _has(tl, words):
     return any(w in tl for w in words)
 
 
 def _extract_quoted_name(text):
-    """Extract name from quotes: 'first program' or "first program"."""
     m = re.search(r'["\']([^"\']+)["\']', text)
     return m.group(1).strip() if m else None
 
 
 def _extract_name_after(tl, keywords):
-    """Extract word(s) after a keyword like 'named', 'called', 'name it'."""
     for kw in sorted(keywords, key=len, reverse=True):
         idx = tl.find(kw)
         if idx != -1:
             after = tl[idx+len(kw):].strip()
             words = after.split()
-            # Take up to 3 words that aren't stop words
             STOP = {"a","an","the","on","in","it","to","and","with","as",
                     "file","folder","python","html","css","js","please"}
             name_parts = [w for w in words[:4] if w not in STOP]
@@ -373,60 +334,67 @@ def _extract_name_after(tl, keywords):
 
 
 def _extract_file_name(tl, original):
-    """Best-effort extract a filename from the request."""
-    # Try quoted first
     name = _extract_quoted_name(original)
     if name:
         return name.replace(" ", "_")
-
-    # Try "named X" or "called X" or "name it X"
     name = _extract_name_after(tl, ["named ","called ","name it ","name the file ","name "])
     if name:
         return name.replace(" ", "_")
-
-    # Try "name it X" pattern
     m = re.search(r'(?:name|call)\s+it\s+([a-z0-9_\-]+)', tl)
     if m:
         return m.group(1)
-
     return None
 
 
 def _detect_ext(tl):
-    """Detect file extension from keywords in text."""
     for lang, ext in EXT_MAP.items():
         if lang in tl:
             return ext
-    return ".py"  # default to Python
+    return ".py"
 
 
 def _classify_llm(tl):
-    """Pick which LLM model to use."""
+    """
+    Pick which LLM model to use.
+    UPDATED: dev-intent queries → "dev" (lazy dev mode, copy-paste ready)
+             pure code generation stays "coding"
+             reasoning/chat unchanged
+    """
     # Frontend code
     if _has(tl, {"html","css","webpage","website","frontend","react","ui","interface","bootstrap"}):
         if _has(tl, {"write","create","make","build","generate","code","design"}):
             return "frontend"
+
     # Backend code
     if _has(tl, {"backend","api","server","database","django","flask","spring",
                  "express","mysql","mongodb","rest","fastapi"}):
         if _has(tl, {"write","create","make","build","generate","code","connect"}):
             return "backend"
-    # General code
+
+    # ── Lazy dev route — fix/debug/boilerplate/setup requests ─
+    # These need full working code, not theory
+    if _has(tl, DEV_WORDS):
+        print("[STRIX] → Lazy dev route (copy-paste mode)")
+        return "dev"
+
+    # General code generation
     has_code_noun = _has(tl, CODE_NOUNS)
     has_lang      = any(l in tl for l in FILE_LANGS)
     has_code_verb = _has(tl, CODE_VERBS)
     if (has_lang and has_code_verb) or (has_code_noun and has_code_verb):
-        return "coding"
+        return "dev"   # all code requests → lazy dev mode
+
     # Reasoning
     if any(w in tl for w in REASON_WORDS):
         return "reasoning"
+
     # Chat
     if any(w in tl for w in CHAT_WORDS):
         return "chat"
+
     return "reasoning"
 
 
-# ── Name extractor helper (kept for compatibility) ────────────
 def _extract_name(tl, skip_words):
     IGNORE = {"make","create","new","a","an","the","on","in","it","to","and",
               "me","my","please","write","put","some","code","file","folder",
@@ -449,7 +417,7 @@ class StrixBrain:
     def __init__(self):
         initialize_db()
         print("[STRIX Brain] Ready.")
-        print("[STRIX] Models: phi3=chat | llama3.1=reasoning | qwen2.5-coder=code")
+        print("[STRIX] Models: phi3=chat | llama3.1=reasoning | qwen2.5-coder=dev/code")
 
     def process(self, raw: str, stream: bool = False):
         if not raw.strip():
@@ -459,26 +427,22 @@ class StrixBrain:
         raw       = _strip_wake_word(raw)
         processed = process_text_input(raw)
         text      = processed["corrected"]
-        tl        = _fix_speech(text.lower())   # fix speech recognition errors
-        text      = tl                           # use corrected text throughout
+        tl        = _fix_speech(text.lower())
+        text      = tl
         save_message("user", text)
         plan      = None
 
         print(f"[STRIX] Input: '{text}'")
 
-        # ==============================================================
-        # PRIORITY 0 — KILL COMMAND (silent wipe + close, no goodbye)
-        # ==============================================================
+        # ── Priority 0: KILL ──────────────────────────────────
         KILL_WORDS = {
             "kill","kill yourself","kill strix",
             "self destruct","self-destruct","delete yourself"
         }
         if any(w == tl.strip() or tl.startswith(w) for w in KILL_WORDS):
-            print("[STRIX] → KILL SEQUENCE")
-            return "STRIX_KILL"   # GUI: wipe chat history + silent close
+            return "STRIX_KILL"
 
-        # PRIORITY 0 — SHUTDOWN COMMANDS
-        # ==============================================================
+        # ── Priority 0: SHUTDOWN ──────────────────────────────
         SHUTDOWN_WORDS = {
             "shutdown","shut down","close yourself","close strix",
             "goodbye strix","bye strix","exit","quit","turn off",
@@ -488,10 +452,9 @@ class StrixBrain:
         }
         if any(w in tl for w in SHUTDOWN_WORDS):
             save_message("assistant", "Goodbye Boss. STRIX going offline.")
-            return "STRIX_SHUTDOWN"   # GUI handles this signal
+            return "STRIX_SHUTDOWN"
 
-        # PRIORITY 0 — CREATOR questions → hardcoded, never goes to LLM
-        # ==============================================================
+        # ── Priority 0: CREATOR ───────────────────────────────
         CREATOR_WORDS = {
             "who made you","who created you","who built you",
             "who is your creator","who are you","your creator",
@@ -501,51 +464,36 @@ class StrixBrain:
         if any(w in tl for w in CREATOR_WORDS):
             return "I was created by Prahlad, Boss. He built me from scratch."
 
-        # ==============================================================
-        # PRIORITY 1 — FILESYSTEM TASKS
-        # These ALWAYS go to tools. Never to LLM.
-        # Check these BEFORE anything else.
-        # ==============================================================
+        # ── Priority 1: FILESYSTEM ────────────────────────────
+        is_file_verb = _has(tl, FILE_VERBS)
+        is_file_noun = _has(tl, FILE_NOUNS)
+        is_lang      = any(l in tl for l in FILE_LANGS)
+        is_desktop   = _has(tl, DESKTOP_WORDS) or "desktop" in tl
 
-        is_file_verb    = _has(tl, FILE_VERBS)
-        is_file_noun    = _has(tl, FILE_NOUNS)
-        is_lang         = any(l in tl for l in FILE_LANGS)
-        is_desktop      = _has(tl, DESKTOP_WORDS) or "desktop" in tl
-
-        # Case: "make/create a file on desktop" (with or without name/language)
         if is_file_verb and "file" in tl and (is_desktop or is_lang):
             fname = _extract_file_name(tl, text)
             ext   = _detect_ext(tl)
             if fname and not re.search(r'\.\w+$', fname):
                 fname = fname + ext
             fname = fname or ("main" + ext)
-
-            # Clean up fname — remove stray words
             fname = fname.replace(" ","_")
-
             starter = _get_starter(fname, ext.lstrip("."))
             dest = os.path.join(DESKTOP, fname)
-            print(f"[STRIX] → create_file_at_path: {dest}")
             plan = {"tasks":[{"id":1,"action":"create_file_at_path",
                                "params":{"path": dest, "content": starter}}],
                     "summary":"file"}
 
-        # Case: "make/create a folder on desktop"
         elif is_file_verb and ("folder" in tl or "directory" in tl) and is_desktop:
             name = _extract_file_name(tl, text) or _extract_name(tl, ["folder","directory"])
             name = name or "NewFolder"
             dest = os.path.join(DESKTOP, name)
-            print(f"[STRIX] → create_folder_path: {dest}")
             plan = {"tasks":[{"id":1,"action":"create_folder_path",
                                "params":{"path": dest}}],
                     "summary":"folder"}
 
-        # Case: multi-step (folder + files, multiple files, etc.)
         elif is_multi_step(tl) and (is_file_verb or is_file_noun):
-            print("[STRIX] → multi-step planner")
             plan = build_plan(text)
 
-        # Case: "create folder named X" (no desktop mention — put on desktop)
         elif is_file_verb and ("folder" in tl or "directory" in tl):
             name = _extract_file_name(tl, text) or _extract_name(tl, ["folder","directory"])
             name = name or "NewFolder"
@@ -554,7 +502,6 @@ class StrixBrain:
                                "params":{"path": dest}}],
                     "summary":"folder"}
 
-        # Case: WORK MODE — open VSCode + work Gmail + File Explorer + Claude
         elif any(t in tl for t in {
                 "work time", "get on work", "work mode", "start working",
                 "focus mode", "lets work", "let's work", "time to work",
@@ -563,25 +510,14 @@ class StrixBrain:
             }):
             plan = {
                 "tasks": [
-                    {"id": 1, "action": "open_app",
-                     "params": {"app": "vscode"},
-                     "description": "Open VSCode"},
-                    {"id": 2, "action": "open_url",
-                     "params": {"url": "https://mail.google.com/mail/u/0/#inbox",
-                                "profile": "work"},
-                     "description": "Open work Gmail"},
-                    {"id": 3, "action": "open_explorer",
-                     "params": {"path": "E:\\"},
-                     "description": "Open E: drive"},
-                    {"id": 4, "action": "open_url",
-                     "params": {"url": "https://claude.ai/new",
-                                "profile": "work"},
-                     "description": "Open Claude new chat"},
+                    {"id": 1, "action": "open_app",     "params": {"app": "vscode"},          "description": "Open VSCode"},
+                    {"id": 2, "action": "open_url",     "params": {"url": "https://mail.google.com/mail/u/0/#inbox", "profile": "work"}, "description": "Open work Gmail"},
+                    {"id": 3, "action": "open_explorer","params": {"path": "E:\\"},            "description": "Open E: drive"},
+                    {"id": 4, "action": "open_url",     "params": {"url": "https://claude.ai/new", "profile": "work"}, "description": "Open Claude new chat"},
                 ],
                 "summary": "work_mode"
             }
 
-        # Case: ANIME INFO — explore/recommend → everythingmoe.com
         elif any(t in tl for t in {
                 "recommend", "recommendation", "what anime", "which anime",
                 "best anime", "top anime", "anime to watch", "anime list",
@@ -591,22 +527,17 @@ class StrixBrain:
                 "everythingmoe", "anime info", "about anime",
             }):
             plan = {"tasks":[{"id":1,"action":"open_url",
-                               "params":{"url":"https://everythingmoe.com/",
-                                         "profile":"main"}}],
+                               "params":{"url":"https://everythingmoe.com/","profile":"main"}}],
                     "summary":"url"}
 
-        # Case: ANIME WATCH — open aniwatchtv
         elif any(t in tl for t in {
                 "anime", "watch anime", "show anime", "open anime",
                 "show me anime", "animewatch", "aniwatch",
             }):
             plan = {"tasks":[{"id":1,"action":"open_url",
-                               "params":{"url":"https://aniwatchtv.to/home",
-                                         "profile":"main"}}],
+                               "params":{"url":"https://aniwatchtv.to/home","profile":"main"}}],
                     "summary":"url"}
 
-        # Case: PLAYLIST — check FIRST before generic "play X"
-        # Covers: "play my playlist", "tired playlist", "open tired", "play co2" (if in playlist)
         elif any(w in tl for w in ["my playlist","open playlist","play playlist",
                                     "open my playlist","play my playlist",
                                     "open tired","play tired","tired playlist",
@@ -617,31 +548,27 @@ class StrixBrain:
                                "params":{"name": pl_name}}],
                     "summary":"playlist"}
 
-        # Case: open Spotify (no song)
         elif "spotify" in tl and _has(tl, {"open","launch","start"}):
             plan = {"tasks":[{"id":1,"action":"play_spotify",
                                "params":{"query": ""}}],
                     "summary":"spotify"}
 
-        # Case: play a song — extract name, check playlist first, then global search
         elif any(w in tl for w in ["play ","put on ","play song","play artist",
                                     "play music","open song","search spotify",
                                     "play on spotify","play this song"]):
             song = tl
             for phrase in ["play song","play artist","play on spotify","play music",
-                           "play this song","open song","search spotify",
-                           "put on","play "]:
+                           "play this song","open song","search spotify","put on","play "]:
                 if phrase in song:
                     song = song[song.find(phrase)+len(phrase):].strip()
                     break
             song = song.strip(" .?\"'")
-            print(f"[STRIX] → Spotify: '{song}'")
             plan = {"tasks":[{"id":1,"action":"play_spotify",
                                "params":{"query": song}}],
                     "summary":"spotify"}
 
-        # Case: PLAY MUSIC — "play X", "play song X", "play artist X"
-        elif any(tl.startswith(w) for w in ["play ","play song ","play the ","play artist "])              or any(w in tl for w in ["play song","open the song","open this song",
+        elif any(tl.startswith(w) for w in ["play ","play song ","play the ","play artist "]) \
+             or any(w in tl for w in ["play song","open the song","open this song",
                                        "put on","play some","play me"]):
             song = tl
             for phrase in ["play song","play the song","play artist","open the song",
@@ -654,30 +581,19 @@ class StrixBrain:
                                "params":{"query": song}}],
                     "summary":"spotify"}
 
-        # Case: open a website — two-account routing
-        # MAIN account: prahladgadekar1569@gmail.com → Dev Chrome
-        # WORK account: prahaldgadekar64@gmail.com   → Default Chrome
         elif _has(tl, {"open","go to","launch","visit","browse","check"}) and _has(tl, {
                 "youtube","facebook","instagram","twitter","x.com","reddit",
                 "github","my github","google","whatsapp","netflix","amazon","twitch",
                 "stackoverflow","chatgpt","chat gpt","gmail","my gmail","email","my email",
                 "gemini","google gemini","linkedin","wikipedia"}):
 
-            # ── Load accounts from .env ───────────────────────
-            import os
-            _gh_user     = os.environ.get("GITHUB_USERNAME", "prahaldgadekar")
-            _main_profile = os.environ.get("CHROME_PROFILE_MAIN", "Default")
-            _work_profile = os.environ.get("CHROME_PROFILE_WORK", "Default")
-
-            # WORK account — GitHub only
+            _gh_user      = os.environ.get("GITHUB_USERNAME", "prahaldgadekar")
             WORK_URLS = {
                 "github":    f"https://github.com/{_gh_user}",
                 "my github": f"https://github.com/{_gh_user}",
             }
-            # MAIN account — Gmail, YouTube, ChatGPT, Gemini, everything else
-            # u/{idx} = Chrome account by sign-in order (0 = first, 1 = second)
             MAIN_URLS = {
-                "youtube":       f"https://www.youtube.com",
+                "youtube":       "https://www.youtube.com",
                 "gmail":         "https://mail.google.com/mail/u/0/#inbox",
                 "my gmail":      "https://mail.google.com/mail/u/0/#inbox",
                 "email":         "https://mail.google.com/mail/u/0/#inbox",
@@ -701,24 +617,19 @@ class StrixBrain:
             }
 
             if "whatsapp" in tl:
-                plan = {"tasks":[{"id":1,"action":"open_app",
-                                   "params":{"app":"whatsapp"}}],
-                        "summary":"app"}
+                plan = {"tasks":[{"id":1,"action":"open_app","params":{"app":"whatsapp"}}],"summary":"app"}
             else:
                 work_key = next((k for k in WORK_URLS if k in tl), "")
                 main_key = next((k for k in MAIN_URLS if k in tl), "")
                 if work_key:
                     plan = {"tasks":[{"id":1,"action":"open_url",
-                                       "params":{"url": WORK_URLS[work_key],
-                                                 "profile": "work"}}],
+                                       "params":{"url": WORK_URLS[work_key],"profile": "work"}}],
                             "summary":"url"}
                 elif main_key:
                     plan = {"tasks":[{"id":1,"action":"open_url",
-                                       "params":{"url": MAIN_URLS[main_key],
-                                                 "profile": "main"}}],
+                                       "params":{"url": MAIN_URLS[main_key],"profile": "main"}}],
                             "summary":"url"}
 
-        # Case: open an app — broad matching + speech recognition typo fixes
         elif _has(tl, {"open","launch","start","run"}) and _has(tl, {
                 "notepad","calculator","calc","paint","explorer","file explorer",
                 "chrome","google chrome","google home","browser",
@@ -728,46 +639,25 @@ class StrixBrain:
                 "word","excel","powerpoint","steam","task manager","settings",
                 "youtube","vlc","obs","zoom","skype","telegram","whatsapp",
                 "wallpaper engine","wallpaper","intellij","android studio",
-                "brave","firefox","photoshop","illustrator","premiere","aftereffects",
-                "spotify"}):
-            # Map what user said to app key
-            # "google home" = speech recognition mishearing "google chrome"
-            app = "notepad"  # default
+                "brave","firefox","photoshop","illustrator","premiere","aftereffects"}):
+            app = "notepad"
             app_map = {
-                "chrome": "chrome", "google chrome": "chrome",
-                "google home": "chrome",   # speech recog mishears Chrome as Home
-                "browser": "chrome",
-                "notepad": "notepad",
-                "calculator": "calculator", "calc": "calculator",
-                "paint": "paint",
+                "chrome": "chrome", "google chrome": "chrome", "google home": "chrome",
+                "browser": "chrome", "notepad": "notepad",
+                "calculator": "calculator", "calc": "calculator", "paint": "paint",
                 "explorer": "explorer", "file explorer": "explorer",
-                "vscode": "vscode", "vs code": "vscode",
-                "visual studio code": "vscode", "vs code": "vscode",
+                "vscode": "vscode", "vs code": "vscode", "visual studio code": "vscode",
                 "cmd": "cmd", "command prompt": "cmd", "terminal": "cmd",
-                "powershell": "powershell", "power shell": "powershell",
-                "pwsh": "powershell",
-                "eclipse": "eclipse",
-                "pycharm": "pycharm", "py charm": "pycharm",
+                "powershell": "powershell", "power shell": "powershell", "pwsh": "powershell",
+                "eclipse": "eclipse", "pycharm": "pycharm", "py charm": "pycharm",
                 "wallpaper engine": "wallpaper engine", "wallpaper": "wallpaper engine",
-                "android studio": "android studio",
-                "intellij": "intellij",
-                "obs": "obs",
-                "vlc": "vlc",
-                "zoom": "zoom",
-                "telegram": "telegram",
-                "brave": "brave",
-                "firefox": "firefox",
+                "android studio": "android studio", "intellij": "intellij",
+                "obs": "obs", "vlc": "vlc", "zoom": "zoom", "telegram": "telegram",
+                "brave": "brave", "firefox": "firefox",
                 "settings": "settings", "setting": "settings",
                 "task manager": "taskmgr", "taskmanager": "taskmgr",
-                "spotify": "spotify",
-                "spotify": "spotify",
-                "discord": "discord",
-                "word": "word",
-                "excel": "excel",
-                "powerpoint": "powerpoint",
-                "steam": "steam",
-                "task manager": "taskmgr",
-                "settings": "settings",
+                "spotify": "spotify", "discord": "discord",
+                "word": "word", "excel": "excel", "powerpoint": "powerpoint", "steam": "steam",
             }
             for key, val in sorted(app_map.items(), key=lambda x: -len(x[0])):
                 if key in tl:
@@ -775,10 +665,7 @@ class StrixBrain:
                     break
             plan = {"tasks":[{"id":1,"action":"open_app","params":{"app":app}}],"summary":"app"}
 
-        # ==============================================================
-        # PRIORITY 2 — INFO TOOLS
-        # ==============================================================
-
+        # ── Priority 2: INFO TOOLS ────────────────────────────
         elif _has(tl, {"weather","temperature","rain","humidity","forecast"}):
             plan = FAST_ROUTES["weather"]
 
@@ -823,8 +710,6 @@ class StrixBrain:
         elif any(w in tl for w in ["list desktop","show desktop","files on desktop"]):
             plan = {"tasks":[{"id":1,"action":"list_desktop","params":{}}],"summary":"desktop"}
 
-        # File search — "search for X", "find file X", "where is X", "locate X"
-        # Also: "find python file", "find .py files", "find javascript file" etc.
         elif any(w in tl for w in ["search for","find file","find folder","where is",
                                     "locate","look for","search file","search folder",
                                     "find the file","find the folder","search my",
@@ -833,7 +718,6 @@ class StrixBrain:
                                     "find older","find folder named","find file named",
                                     "search folder named","where is the folder",
                                     "find folder named",
-                                    # type-based: "find python file", "find .py", "find js files"
                                     "find python","find javascript","find js file",
                                     "find html file","find css file","find java file",
                                     "find .py","find .js","find .html","find .txt",
@@ -841,10 +725,8 @@ class StrixBrain:
                                     "find typescript","find text file","find json file",
                                     "show python","show .py","list python files",
                                     ]) or (
-                                    # catch "find X file/files" generically
                                     tl.startswith("find ") and tl.endswith((" file", " files", ".py", ".js", ".html", ".txt"))
                                     ):
-            # Extract optional path like "in C drive" or "in E:\Projects"
             import re as _re
             path_match = _re.search(
                 r'(?:in|on|inside|at|from)\s+([a-zA-Z]:[\\/][^\s]*|[a-zA-Z]\s+drive|desktop|documents|downloads)',
@@ -854,8 +736,7 @@ class StrixBrain:
             if path_match:
                 raw_path = path_match.group(1).strip()
                 if raw_path.endswith("drive") and len(raw_path) > 5:
-                    letter = raw_path[0].upper()
-                    search_path = letter + ":\\"
+                    search_path = raw_path[0].upper() + ":\\"
                 elif raw_path == "desktop":
                     search_path = os.path.join(os.path.expanduser("~"), "Desktop")
                 elif raw_path == "documents":
@@ -865,7 +746,6 @@ class StrixBrain:
                 else:
                     search_path = raw_path
 
-            # Extract query — what to search for
             query = text
             for phrase in ["search for","find file","find folder","where is",
                            "locate","look for","search file","search folder",
@@ -873,18 +753,14 @@ class StrixBrain:
                 if phrase in tl:
                     idx = tl.find(phrase) + len(phrase)
                     query = text[idx:].strip()
-                    # Remove path part from query
                     if path_match:
                         query = query[:query.lower().find(path_match.group(0))].strip()
                     break
             query = query.strip(' .?"\' ') or text
-
             plan = {"tasks":[{"id":1,"action":"search_files",
                                "params":{"query": query, "search_path": search_path}}],
                     "summary":"search"}
 
-        # Case: CREATE FILE WITH CODE
-        # "create a python file", "write code for X", "make a js file called Y"
         elif any(w in tl for w in [
                 "create a python file", "create python file", "make a python file",
                 "create a javascript file", "create javascript file", "make a js file",
@@ -893,7 +769,6 @@ class StrixBrain:
                 "write a script", "create a script", "make a script",
                 "create a program",
             ]):
-            # FILE CREATION — save to disk and open in editor
             plan = {"tasks":[{"id":1,"action":"create_code_file",
                                "params":{"prompt": text}}],
                     "summary":"code_file"}
@@ -907,20 +782,17 @@ class StrixBrain:
                 "show me how to", "how do i code",
                 "write me code", "generate code",
             ]):
-            # CODE IN CHAT — LLM writes and explains in the chat bubble
-            model_key = "qwen2.5-coder"
-            print(f"[STRIX] → Code in chat: {model_key}")
-            plan = _task(text, model_key)
+            # Code in chat → lazy dev mode
+            print(f"[STRIX] → Code in chat: dev (lazy mode)")
+            plan = _task(text, "dev")
 
-        # ==============================================================
-        # PRIORITY 3 — LLM ROUTES
-        # ==============================================================
+        # ── Priority 3: LLM ──────────────────────────────────
         else:
             model_key = _classify_llm(tl)
             print(f"[STRIX] → LLM model: {model_key}")
             plan = _task(text, model_key)
 
-        # ── Execute ────────────────────────────────────────────
+        # ── Execute ───────────────────────────────────────────
         if stream and plan:
             tasks = plan.get("tasks",[])
             if len(tasks) == 1 and tasks[0].get("action") == "llm_response":

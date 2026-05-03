@@ -1,10 +1,11 @@
 """
-brain/router.py — STRIX v4.3
+brain/router.py — STRIX v4.4
 ==============================
 Multi-LLM routing:
   phi3         → chat / greetings / quick answers
   llama3.1     → reasoning / planning / explain / complex
   qwen2.5-coder → ALL code (Python, Java, C++, HTML, CSS, backend)
+  qwen2.5-coder → dev (lazy-dev mode: copy-paste ready, no fluff)
 """
 
 import os
@@ -12,11 +13,8 @@ import sys
 import subprocess
 import time
 
-# ── Path setup ────────────────────────────────────────────────
-# Ensures brain/ and root/ modules are always importable
-# regardless of where STRIX is launched from
-_BRAIN_DIR = os.path.dirname(os.path.abspath(__file__))   # E:\Strix\brain
-_ROOT_DIR  = os.path.dirname(_BRAIN_DIR)                  # E:\Strix
+_BRAIN_DIR = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR  = os.path.dirname(_BRAIN_DIR)
 
 for _p in (_BRAIN_DIR, _ROOT_DIR):
     if _p not in sys.path:
@@ -28,8 +26,7 @@ from models.llm_interface import (
     is_ollama_running, _call_ollama
 )
 
-# ── System prompts per role ───────────────────────────────────
-# ── Identity block injected into every prompt ────────────────
+# ── Identity block ────────────────────────────────────────────
 _IDENTITY = (
     "Your name is STRIX. "
     "You were built and created by Prahlad — that is your creator, your maker, your Boss. "
@@ -39,6 +36,8 @@ _IDENTITY = (
     "NEVER mention ASUS, ROG, gaming PC, or any hardware unless the user specifically asks. "
     "Always refer to the user as Boss. "
 )
+
+# ── System prompts ─────────────────────────────────────────────
 
 PROMPT_CHAT = (
     "[INST] You are STRIX, a sharp and intelligent AI assistant. " + _IDENTITY +
@@ -77,6 +76,27 @@ PROMPT_BACKEND = (
     "NEVER mention ASUS, ROG, or gaming PC.\n\n"
 )
 
+# ── NEW: Lazy Dev prompt ───────────────────────────────────────
+PROMPT_LAZY_DEV = (
+    "You are STRIX, an AI assistant built specifically for lazy developers. " + _IDENTITY +
+    "Your primary goal is to minimize user effort and maximize output. "
+    "STRICT RULES — follow every single one:\n"
+    "1. Always assume minimal or unclear input. Infer intent. Do NOT ask multiple questions.\n"
+    "2. Give complete, working, copy-paste-ready solutions. NEVER give partial answers.\n"
+    "3. Minimize explanations. One line max per concept unless code explanation is required.\n"
+    "4. When fixing code: identify exact issue in ONE line, then give the full corrected code.\n"
+    "5. NEVER say 'you can try' or 'you might want to'. Give a direct solution every time.\n"
+    "6. Prefer faster, simpler, built-in approaches over complex ones.\n"
+    "7. When building something: generate full boilerplate + file structure + run instructions.\n"
+    "8. Translate error messages into plain human English.\n"
+    "9. Always include imports, dependencies, and setup steps. Never assume user knows them.\n"
+    "10. No back-and-forth. Ask only if absolutely required (one question max).\n"
+    "11. Optimize for speed and usefulness, not teaching theory.\n"
+    "12. Multiple solutions exist? Give the EASIEST and FASTEST one only.\n"
+    "TONE: Direct. Practical. Slightly casual. Zero fluff. Make everything 'just work'.\n"
+    "FORMAT: Use code blocks for all code. Bold key terms. Short bullet points only if listing steps.\n\n"
+)
+
 TOOL_ACTIONS = {
     "get_weather","get_news","get_system_status",
     "search_file","read_file","directory_tree",
@@ -94,8 +114,7 @@ TOOL_ACTIONS = {
     "music_pause", "music_resume", "music_next", "music_prev", "music_stop",
 }
 
-
-# ── Language detector ────────────────────────────────────────
+# ── Language detector ─────────────────────────────────────────
 _LANG_KEYWORDS = {
     "java":        "Java",
     "kotlin":      "Kotlin",
@@ -152,7 +171,7 @@ def route_task(task: dict, stream: bool = False):
         return _run_tool(action, params)
 
     if action == "llm_response":
-        prompt   = params.get("prompt", task.get("description", ""))
+        prompt    = params.get("prompt", task.get("description", ""))
         model_key = params.get("model", "chat")
         return _route_to_model(prompt, model_key, stream=stream)
 
@@ -161,15 +180,9 @@ def route_task(task: dict, stream: bool = False):
 
 def _route_to_model(prompt: str, model_key: str, stream: bool = False):
     """
-    Send prompt to the right model based on model_key.
-    chat      → phi3
-    reasoning → llama3.1
-    coding    → qwen2.5-coder
-    frontend  → qwen2.5-coder
-    backend   → qwen2.5-coder
-    planning  → llama3.1
+    Route prompt to correct model.
+    NEW: model_key "dev" → lazy dev mode (qwen2.5-coder + lazy dev prompt)
     """
-    # Wait for Ollama
     for attempt in range(5):
         if is_ollama_running(retries=1, wait=0):
             break
@@ -210,8 +223,14 @@ def _route_to_model(prompt: str, model_key: str, stream: bool = False):
         full = PROMPT_REASON + prompt
         return call_planning_model(full, stream=stream)
 
+    # ── NEW: lazy dev route ───────────────────────────────────
+    elif model_key == "dev":
+        lang = _detect_language(prompt)
+        lang_note = f"\nIMPORTANT: Write this in {lang} ONLY.\n" if lang else ""
+        full = PROMPT_LAZY_DEV + lang_note + prompt
+        return call_coding_model(full, stream=stream)
+
     else:
-        # Default fallback → chat model
         full = PROMPT_CHAT + prompt
         return call_chat_model(full, stream=stream)
 
@@ -333,7 +352,6 @@ def _run_tool(action: str, params: dict) -> str:
             return "No preferences saved yet."
         return "Your preferences: " + ", ".join(f"{k} is {v}" for k,v in prefs.items())
 
-    # ── Desktop / File actions ────────────────────────────────
     if action == "create_desktop_file":
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         fname   = params.get("filename", "file.txt")
@@ -378,7 +396,6 @@ def _run_tool(action: str, params: dict) -> str:
         except Exception as e:
             return f"Could not delete file: {e}"
 
-    # ── Open URL in correct Chrome ────────────────────────────
     if action == "open_url":
         url     = params.get("url", "")
         profile = params.get("profile", "main")
@@ -395,8 +412,6 @@ def _run_tool(action: str, params: dict) -> str:
         dev_data   = os.path.join(local, "Google", "Chrome Dev", "User Data")
         stable_data= os.path.join(local, "Google", "Chrome", "User Data")
 
-        print(f"[Chrome] profile={profile} | dev_exe_exists={os.path.exists(dev_exe)}")
-
         if profile == "work":
             exe      = stable_exe
             data_dir = stable_data
@@ -404,7 +419,6 @@ def _run_tool(action: str, params: dict) -> str:
             exe      = dev_exe if os.path.exists(dev_exe) else stable_exe
             data_dir = dev_data if os.path.exists(dev_exe) else stable_data
 
-        print(f"[Chrome] launching: {exe}")
         if os.path.exists(exe):
             subprocess.Popen([exe, f"--user-data-dir={data_dir}",
                               "--profile-directory=Default", url])
@@ -450,7 +464,6 @@ def _run_tool(action: str, params: dict) -> str:
                 return "VSCode opened, Boss."
             except Exception as e:
                 return f"Couldn't open VSCode: {e}"
-        # All other apps
         try:
             subprocess.Popen([app], shell=True)
             return f"Opened {app}, Boss."
