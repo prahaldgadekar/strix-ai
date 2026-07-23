@@ -238,27 +238,27 @@ def _route_to_model(prompt: str, model_key: str, stream: bool = False):
 def _run_tool(action: str, params: dict) -> str:
 
     if action == "get_weather":
-        from weather import format_weather
+        from api.weather import format_weather
         return format_weather(params.get("city"))
 
     if action == "get_news":
-        from news import format_news
+        from api.news import format_news
         return format_news(params.get("category","technology"), params.get("count",5))
 
     if action == "get_system_status":
-        from system_tools import get_system_summary
+        from tools.system_tools import get_system_summary
         return get_system_summary()
 
     if action == "wiki_search":
-        from extras import search_wikipedia
+        from api.extras import search_wikipedia
         return search_wikipedia(params.get("query",""))
 
     if action == "get_crypto":
-        from extras import get_crypto_price
+        from api.extras import get_crypto_price
         return get_crypto_price(params.get("coin","bitcoin"))
 
     if action == "get_top_crypto":
-        from extras import get_top_crypto
+        from api.extras import get_top_crypto
         return get_top_crypto()
 
     if action == "get_joke":
@@ -266,30 +266,30 @@ def _run_tool(action: str, params: dict) -> str:
             import pyjokes
             return f"Here is one for you Boss — {pyjokes.get_joke(language='en', category='neutral')}"
         except ImportError:
-            from extras import get_joke
+            from api.extras import get_joke
             return get_joke()
 
     if action == "get_nasa":
-        from extras import get_nasa_apod
+        from api.extras import get_nasa_apod
         return get_nasa_apod()
 
     if action == "get_ip_info":
-        from extras import get_my_ip_info
+        from api.extras import get_my_ip_info
         return get_my_ip_info()
 
     if action == "get_exchange":
-        from extras import get_exchange_rate
+        from api.extras import get_exchange_rate
         return get_exchange_rate(params.get("from","USD"), params.get("to","INR"))
 
     if action == "get_github":
-        from extras import get_github_profile
+        from api.extras import get_github_profile
         username = params.get("username","")
         if not username:
             return "Please tell me the GitHub username Boss."
         return get_github_profile(username)
 
     if action in ("search_file", "search_files"):
-        from search_tools import search_files, format_search_results
+        from tools.search_tools import search_files, format_search_results
         query       = params.get("query", "")
         search_path = params.get("search_path", None)
         EXT_WORDS = {
@@ -310,35 +310,35 @@ def _run_tool(action: str, params: dict) -> str:
         return format_search_results(results)
 
     if action == "read_file":
-        from search_tools import read_file
+        from tools.search_tools import read_file
         return read_file(params.get("path",""))
 
     if action == "directory_tree":
-        from search_tools import get_directory_tree
+        from tools.search_tools import get_directory_tree
         return get_directory_tree(params.get("path","."))
 
     if action == "create_java_project":
-        from project_tools import create_java_project
+        from tools.project_tools import create_java_project
         return create_java_project(params.get("name","MyProject"))
 
     if action == "create_c_project":
-        from project_tools import create_c_project
+        from tools.project_tools import create_c_project
         return create_c_project(params.get("name","MyProject"))
 
     if action == "create_cpp_project":
-        from project_tools import create_cpp_project
+        from tools.project_tools import create_cpp_project
         return create_cpp_project(params.get("name","MyProject"))
 
     if action == "create_python_project":
-        from project_tools import create_python_project
+        from tools.project_tools import create_python_project
         return create_python_project(params.get("name","MyProject"))
 
     if action == "list_projects":
-        from project_tools import list_projects
+        from tools.project_tools import list_projects
         return list_projects()
 
     if action == "remember_preference":
-        from memory_db import set_preference
+        from memory.memory_db import set_preference
         key = params.get("key",""); val = params.get("value","")
         if key:
             set_preference(key, val)
@@ -346,14 +346,15 @@ def _run_tool(action: str, params: dict) -> str:
         return "No key provided."
 
     if action == "get_preferences":
-        from memory_db import get_all_preferences
+        from memory.memory_db import get_all_preferences
         prefs = get_all_preferences()
         if not prefs:
             return "No preferences saved yet."
         return "Your preferences: " + ", ".join(f"{k} is {v}" for k,v in prefs.items())
 
     if action == "create_desktop_file":
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        from brain.planner import DESKTOP
+        desktop = DESKTOP
         fname   = params.get("filename", "file.txt")
         path    = os.path.join(desktop, fname)
         content = params.get("content", "")
@@ -365,7 +366,8 @@ def _run_tool(action: str, params: dict) -> str:
             return f"Could not create file: {e}"
 
     if action == "create_desktop_folder":
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        from brain.planner import DESKTOP
+        desktop = DESKTOP
         name    = params.get("foldername", "NewFolder")
         path    = os.path.join(desktop, name)
         try:
@@ -375,7 +377,8 @@ def _run_tool(action: str, params: dict) -> str:
             return f"Could not create folder: {e}"
 
     if action == "list_desktop":
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        from brain.planner import DESKTOP
+        desktop = DESKTOP
         try:
             items = os.listdir(desktop)
             if not items:
@@ -385,7 +388,8 @@ def _run_tool(action: str, params: dict) -> str:
             return f"Could not list desktop: {e}"
 
     if action == "delete_desktop_file":
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        from brain.planner import DESKTOP
+        desktop = DESKTOP
         fname   = params.get("filename","")
         path    = os.path.join(desktop, fname)
         try:

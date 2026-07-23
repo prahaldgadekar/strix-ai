@@ -168,7 +168,28 @@ EXT_MAP = {
     "markdown": ".md", "md": ".md",
 }
 
-DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
+def _get_real_desktop() -> str:
+    """Get the REAL desktop path — works even with OneDrive redirection."""
+    # 1. Try Windows registry (most reliable)
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        ) as key:
+            raw, _ = winreg.QueryValueEx(key, "Desktop")
+            # Expand environment variables like %USERPROFILE%
+            return os.path.expandvars(raw)
+    except Exception:
+        pass
+    # 2. Try OneDrive path (common on Windows 10/11)
+    onedrive_desktop = os.path.join(os.path.expanduser("~"), "OneDrive", "Desktop")
+    if os.path.isdir(onedrive_desktop):
+        return onedrive_desktop
+    # 3. Fallback to classic path
+    return os.path.join(os.path.expanduser("~"), "Desktop")
+
+DESKTOP = _get_real_desktop()
 
 
 def _get_starter(filename: str, hint: str = "") -> str:

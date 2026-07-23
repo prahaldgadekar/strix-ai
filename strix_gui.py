@@ -144,7 +144,7 @@ class CornerBrackets(QWidget):
         self._pulse = 0.0
         self._pdir  = 1
         self._spin  = 0.0
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(30)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(100)
 
     def _tick(self):
         self._pulse += 0.03 * self._pdir
@@ -195,11 +195,11 @@ class ParticleField(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._particles = []
         self._init_particles()
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(40)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(120)
 
     def _init_particles(self):
         self._particles = []
-        for _ in range(35):
+        for _ in range(18):
             self._particles.append(self._make_particle())
 
     def _make_particle(self, x=None):
@@ -226,7 +226,7 @@ class ParticleField(QWidget):
         for i, pt in enumerate(self._particles):
             pt['x'] += pt['vx']
             pt['y'] += pt['vy']
-            pt['life'] -= 0.003
+            pt['life'] -= 0.005
             if pt['y'] < -10 or pt['life'] <= 0:
                 # Replace dead particle with a fresh one at bottom
                 self._particles[i] = self._make_particle(x=random.uniform(0, w))
@@ -976,7 +976,7 @@ class HudBg(QWidget):
         img_data = base64.b64decode(HUD_B64 + "==")
         self._pix = QPixmap()
         self._pix.loadFromData(img_data)
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(30)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(200)
 
     def _tick(self):
         self._angle  = (self._angle  + 0.35) % 360
@@ -1007,7 +1007,7 @@ class Logo(QWidget):
         super().__init__(parent)
         self.setFixedSize(52,52)
         self._a = 0.0
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(30)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(80)
 
     def _tick(self):
         self._a = (self._a+1.2)%360; self.update()
@@ -1036,7 +1036,7 @@ class Wave(QWidget):
         super().__init__(parent)
         self.setFixedHeight(32)
         self.active = False; self._ph = 0.0
-        t=QTimer(self); t.timeout.connect(self._tick); t.start(35)
+        t=QTimer(self); t.timeout.connect(self._tick); t.start(60)
 
     def _tick(self):
         if self.active: self._ph+=0.20; self.update()
@@ -1574,7 +1574,7 @@ class ArcReactor(QWidget):
         self._energy = 0.25     # 0 = idle  1 = speaking
         self._speaking = False
         self._seg_flash = 0     # cycles gold segments
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(20)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(60)
 
     def set_speaking(self, v: bool):
         self._speaking = v
