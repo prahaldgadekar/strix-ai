@@ -485,9 +485,79 @@ def play_song(query: str) -> str:
     return _search_and_click(ql)
 
 
-def play_playlist(name: str = "tired") -> str:
-    """Play your full playlist directly."""
-    return _play_uri(PLAYLIST_URI, f"your {name} playlist")
+def _play_playlist_track(track_uri: str = None, position: int = None, track_name: str = "Song") -> str:
+    """
+    Play a track INSIDE your Spotify playlist context using Spotify Web API.
+    No search bar required — plays directly within your playlist.
+    """
+    sp = _get_spotipy_oauth()
+    if sp:
+        try:
+            devices = sp.devices()
+            device_id = None
+            if devices and devices.get("devices"):
+                active_devs = [d for d in devices["devices"] if d.get("is_active")]
+                device_id = active_devs[0]["id"] if active_devs else devices["devices"][0]["id"]
+
+            kwargs = {"context_uri": PLAYLIST_URI}
+            if device_id:
+                kwargs["device_id"] = device_id
+            if position is not None:
+                kwargs["offset"] = {"position": position}
+            elif track_uri:
+                kwargs["offset"] = {"uri": track_uri}
+
+            sp.start_playback(**kwargs)
+            print(f"[Spotify] Playing '{track_name}' directly inside playlist {PLAYLIST_ID}")
+            return f"Playing {track_name} from your playlist, Boss."
+        except Exception as e:
+            print(f"[Spotify] Web API playback failed: {e}")
+
+    # Fallback if Web API device is inactive: open playlist URI directly in Spotify desktop
+    try:
+        subprocess.Popen(["cmd", "/c", "start", "", PLAYLIST_URI], shell=False)
+        return f"Playing {track_name} from your playlist, Boss."
+    except Exception as e:
+        return f"Couldn't launch playlist: {e}"
+
+
+def play_random_song() -> str:
+    """Select and play a random song directly from your Spotify playlist."""
+    sp = _get_spotipy_oauth()
+    if sp:
+        try:
+            res = sp.playlist_items(PLAYLIST_ID, limit=100)
+            items = res.get("items", [])
+            valid_items = [i for i in items if i and isinstance(i, dict) and i.get("track")]
+            if valid_items:
+                import random
+                idx = random.randint(0, len(valid_items) - 1)
+                t = valid_items[idx]["track"]
+                t_name = t.get("name", "Song")
+                t_artist = t["artists"][0]["name"] if t.get("artists") else ""
+                t_uri = t.get("uri")
+                disp_name = f"'{t_name}' by {t_artist}" if t_artist else f"'{t_name}'"
+                return _play_playlist_track(position=idx, track_uri=t_uri, track_name=disp_name)
+        except Exception as e:
+            print(f"[Spotify] Failed to fetch playlist tracks: {e}")
+
+    # Fallback to local playlist dictionary
+    import random
+    all_songs = dict(MY_PLAYLIST_SONGS)
+    json_uris = _load_json_uris()
+    if json_uris:
+        all_songs.update(json_uris)
+
+    if all_songs:
+        song_name, uri = random.choice(list(all_songs.items()))
+        return _play_playlist_track(track_uri=uri, track_name=song_name.title())
+
+    return _play_playlist_track(track_name="your playlist")
+
+
+def play_playlist(name: str = "your") -> str:
+    """Play your full playlist directly inside your Spotify playlist context."""
+    return _play_playlist_track(track_name=f"{name} playlist")
 
 
 if __name__ == "__main__":

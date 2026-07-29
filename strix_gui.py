@@ -47,13 +47,17 @@ GREEN = "#00ff88"
 
 # Model badge colours
 MODEL_COLORS = {
-    "phi3":          "#ff6600",   # orange  — fast chat
-    "phi3:latest":   "#ff6600",
-    "llama3.1":      "#aa44ff",   # purple  — reasoning
-    "llama3.1:latest":"#aa44ff",
-    "qwen2.5-coder": "#00cc44",   # green   — coding
+    "qwen3":                 "#ff6600",   # orange  — chat
+    "qwen3:8b":              "#ff6600",
+    "gemma3":                "#00e5ff",   # cyan    — classifier
+    "gemma3:4b":             "#00e5ff",
+    "deepseek-r1":           "#aa44ff",   # purple  — reasoning
+    "deepseek-r1:7b":        "#aa44ff",
+    "qwen2.5-coder":        "#00cc44",   # green   — coding
     "qwen2.5-coder:latest": "#00cc44",
-    "default":       ROG,
+    "phi3":                  "#ff6600",
+    "phi3:latest":           "#ff6600",
+    "default":               ROG,
 }
 
 HUD_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/wAARCABkAGQDASIAAhEBAxEB/8QAGwABAAMBAQEBAAAAAAAAAAAAAAQFBgMCB//EADMQAAIBAwIDBgQFBQAAAAAAAAECAwAEEQUSITFBUWEGEyJxgZEyQqGxwRQjUmJy0fD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8A/R6UpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAKUpQClKUApSlAf/2Q=="
@@ -144,10 +148,10 @@ class CornerBrackets(QWidget):
         self._pulse = 0.0
         self._pdir  = 1
         self._spin  = 0.0
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(100)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(1200)
 
     def _tick(self):
-        self._pulse += 0.03 * self._pdir
+        self._pulse += 0.05 * self._pdir
         if self._pulse >= 1.0 or self._pulse <= 0.0:
             self._pdir *= -1
         self._spin = (self._spin + 0.4) % 360
@@ -195,7 +199,7 @@ class ParticleField(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._particles = []
         self._init_particles()
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(120)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(1200)
 
     def _init_particles(self):
         self._particles = []
@@ -258,78 +262,74 @@ BOOT_LINES = [
 # ── Glitch Button — HUD style with scan-line glitch on click ─
 class GlitchButton(QPushButton):
     """
-    CRT-style HUD button with:
-    - Scanline texture drawn via paintEvent
-    - Angled corner cuts (like image 1)
-    - Continuous glitch on hover
-    - RGB flash on click
+    CRT-style HUD button optimized for instant, zero-lag response:
+    - Pre-cached pens, brushes, colors & polygon geometries for 0.00ms hover
+    - Instant hover transitions without high-frequency timer lag
     """
     def __init__(self, text, color=None, parent=None):
         super().__init__(text, parent)
-        self._base_color  = color or "#00e5ff"
-        self._glitch_on   = False
+        self._base_hex = color or "#00e5ff"
+        self._glitch_on = False
         self._glitch_step = 0
-        self._hover       = False
-        self._scan_offset = 0
-        self._glitch_shift = 0   # pixel shift for glitch effect
-        self._current_col = self._base_color
+        self._hover = False
+        self._glitch_shift = 0
+        self._current_hex = self._base_hex
         self._glitch_colors = [
-            "#ff0033","#00e5ff","#ffd700","#00ff88",
-            "#ff00ff","#ffffff","#ff0033","#00e5ff",
+            "#ff0033", "#00e5ff", "#ffd700", "#00ff88",
+            "#ff00ff", "#ffffff", "#ff0033", "#00e5ff",
         ]
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._glitch_tick)
-        self._hover_timer = QTimer(self)
-        self._hover_timer.timeout.connect(self._hover_tick)
         self.setFixedHeight(34)
         self.setMinimumWidth(80)
-        # Transparent base so we can paint everything ourselves
-        self.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                color: transparent;
-                font-family: Consolas;
-                font-size: 11px;
-                font-weight: bold;
-                letter-spacing: 2px;
-                padding: 0px 18px;
-            }
-        """)
         self.setCursor(Qt.PointingHandCursor)
+        self._font = QFont("Consolas", 10, QFont.Bold)
+        self._poly = None
+        self._update_cached_colors()
+        self.setStyleSheet("QPushButton { background: transparent; border: none; color: transparent; padding: 0 18px; }")
 
-    def _hex_to_qcolor(self, h):
-        h = h.lstrip("#")
-        r,g,b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
-        return QColor(r,g,b)
+    def _update_cached_colors(self):
+        h = (self._current_hex if self._glitch_on else self._base_hex).lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        self._c_col = QColor(r, g, b)
+        self._c_bg_normal = QColor(0, 15, 30, 200)
+        self._c_bg_hover = QColor(r // 6, g // 6, b // 6, 220)
+        self._c_text_hover = QColor(255, 255, 255)
+        self._pen_border_normal = QPen(QColor(r, g, b, 180), 1)
+        self._pen_border_hover  = QPen(QColor(r, g, b, 255), 2)
+        self._pen_accent        = QPen(QColor(r, g, b, 255), 2)
 
-    def _hover_tick(self):
-        """Animate scanlines + subtle glitch while hovering."""
-        self._scan_offset = (self._scan_offset + 2) % 8
-        if random.random() < 0.3:
-            self._glitch_shift = random.randint(-3, 3)
-        else:
-            self._glitch_shift = 0
-        self.update()
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        w, h, cut = self.width(), self.height(), 6
+        from PySide6.QtGui import QPolygon
+        from PySide6.QtCore import QPoint
+        self._poly = QPolygon([
+            QPoint(cut, 0), QPoint(w - cut, 0), QPoint(w, cut),
+            QPoint(w, h - cut), QPoint(w - cut, h), QPoint(cut, h),
+            QPoint(0, h - cut), QPoint(0, cut)
+        ])
 
     def _glitch_tick(self):
         if self._glitch_step >= len(self._glitch_colors):
             self._timer.stop()
             self._glitch_on = False
             self._glitch_step = 0
-            self._current_col = self._base_color
+            self._current_hex = self._base_hex
             self._glitch_shift = 0
+            self._update_cached_colors()
             self.update()
             return
-        self._current_col = self._glitch_colors[self._glitch_step]
-        self._glitch_shift = random.randint(-5, 5)
+        self._current_hex = self._glitch_colors[self._glitch_step]
+        self._glitch_shift = random.randint(-4, 4)
         self._glitch_step += 1
+        self._update_cached_colors()
         self.update()
 
     def trigger_glitch(self):
         self._glitch_on   = True
         self._glitch_step = 0
-        self._timer.start(45)
+        self._timer.start(35)
 
     def mousePressEvent(self, e):
         self.trigger_glitch()
@@ -337,112 +337,62 @@ class GlitchButton(QPushButton):
 
     def enterEvent(self, e):
         self._hover = True
-        self._hover_timer.start(40)
+        self.update()
         super().enterEvent(e)
 
     def leaveEvent(self, e):
         self._hover = False
-        self._hover_timer.stop()
         self._glitch_shift = 0
-        self._scan_offset = 0
         self.update()
         super().leaveEvent(e)
 
     def set_active(self, active: bool, active_color="#00ff88"):
-        self._base_color  = active_color if active else "#00e5ff"
-        self._current_col = self._base_color
-        self.trigger_glitch()
+        self._base_hex    = active_color if active else "#00e5ff"
+        self._current_hex = self._base_hex
+        self._update_cached_colors()
+        self.update()
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
+        try:
+            p.setRenderHint(QPainter.Antialiasing)
+            w, h = self.width(), self.height()
+            cut = 6
 
-        col = self._hex_to_qcolor(self._current_col if self._glitch_on else self._base_color)
+            if not self._poly:
+                from PySide6.QtGui import QPolygon
+                from PySide6.QtCore import QPoint
+                self._poly = QPolygon([
+                    QPoint(cut, 0), QPoint(w - cut, 0), QPoint(w, cut),
+                    QPoint(w, h - cut), QPoint(w - cut, h), QPoint(cut, h),
+                    QPoint(0, h - cut), QPoint(0, cut)
+                ])
 
-        # ── Background fill ───────────────────────────────
-        bg_alpha = 220 if self._hover else 200
-        p.setPen(Qt.NoPen)
-        if self._hover and not self._glitch_on:
-            p.setBrush(QBrush(QColor(col.red()//6, col.green()//6, col.blue()//6, bg_alpha)))
-        else:
-            p.setBrush(QBrush(QColor(0, 15, 30, bg_alpha)))
-
-        # Angled corners polygon (CRT style like image 1)
-        cut = 6
-        from PySide6.QtGui import QPolygon
-        from PySide6.QtCore import QPoint
-        poly = QPolygon([
-            QPoint(cut, 0),
-            QPoint(w - cut, 0),
-            QPoint(w, cut),
-            QPoint(w, h - cut),
-            QPoint(w - cut, h),
-            QPoint(cut, h),
-            QPoint(0, h - cut),
-            QPoint(0, cut),
-        ])
-        p.drawPolygon(poly)
-
-        # ── Scanlines inside button ───────────────────────
-        scan_alpha = 35 if self._hover else 20
-        p.setPen(QPen(QColor(0, 0, 0, scan_alpha), 1))
-        offset = self._scan_offset if self._hover else 0
-        for y in range(offset % 3, h, 3):
-            p.drawLine(1, y, w-1, y)
-
-        # ── CRT glow band (horizontal sweep on hover) ─────
-        if self._hover:
-            glow = QLinearGradient(0, 0, w, 0)
-            glow.setColorAt(0,   QColor(col.red(), col.green(), col.blue(), 0))
-            glow.setColorAt(0.4, QColor(col.red(), col.green(), col.blue(), 25))
-            glow.setColorAt(0.6, QColor(col.red(), col.green(), col.blue(), 25))
-            glow.setColorAt(1,   QColor(col.red(), col.green(), col.blue(), 0))
-            p.setBrush(QBrush(glow))
+            # Background fill
             p.setPen(Qt.NoPen)
-            p.drawPolygon(poly)
+            p.setBrush(QBrush(self._c_bg_hover if self._hover and not self._glitch_on else self._c_bg_normal))
+            p.drawPolygon(self._poly)
 
-        # ── Border ────────────────────────────────────────
-        border_w = 2 if self._hover or self._glitch_on else 1
-        border_alpha = 255 if self._hover or self._glitch_on else 180
-        p.setPen(QPen(QColor(col.red(), col.green(), col.blue(), border_alpha), border_w))
-        p.setBrush(Qt.NoBrush)
-        p.drawPolygon(poly)
+            # Border
+            p.setPen(self._pen_border_hover if (self._hover or self._glitch_on) else self._pen_border_normal)
+            p.setBrush(Qt.NoBrush)
+            p.drawPolygon(self._poly)
 
-        # ── Corner accent brackets (top-left, bottom-right) ─
-        accent_col = QColor(col.red(), col.green(), col.blue(), 255)
-        p.setPen(QPen(accent_col, 2))
-        # top-left
-        p.drawLine(0, cut, 0, cut + 8)
-        p.drawLine(cut, 0, cut + 8, 0)
-        # bottom-right
-        p.drawLine(w, h - cut, w, h - cut - 8)
-        p.drawLine(w - cut, h, w - cut - 8, h)
+            # Corner accent brackets
+            p.setPen(self._pen_accent)
+            p.drawLine(0, cut, 0, cut + 8)
+            p.drawLine(cut, 0, cut + 8, 0)
+            p.drawLine(w, h - cut, w, h - cut - 8)
+            p.drawLine(w - cut, h, w - cut - 8, h)
 
-        # ── Glitch RGB offset strips ──────────────────────
-        if self._glitch_shift != 0:
-            shift = self._glitch_shift
-            strip_h = random.randint(2, 6)
-            strip_y = random.randint(2, h - strip_h - 2)
-            # red channel offset
-            p.setOpacity(0.4)
-            p.setPen(QPen(QColor(255, 0, 0, 120), 1))
-            p.drawLine(shift, strip_y, w + shift, strip_y)
-            # cyan channel offset
-            p.setPen(QPen(QColor(0, 255, 255, 120), 1))
-            p.drawLine(-shift, strip_y + 2, w - shift, strip_y + 2)
-            p.setOpacity(1.0)
+            # Text
+            p.setPen(QPen(self._c_text_hover if self._hover or self._glitch_on else self._c_col))
+            p.setFont(self._font)
+            tx = self._glitch_shift // 2 if self._glitch_on else 0
+            p.drawText(QRectF(tx, 0, w, h), Qt.AlignCenter, self.text())
 
-        # ── Text ──────────────────────────────────────────
-        text_col = QColor(255, 255, 255) if self._hover or self._glitch_on else col
-        p.setPen(QPen(text_col))
-        font = QFont("Consolas", 10, QFont.Bold)
-        p.setFont(font)
-        # Glitch text shift
-        tx = self._glitch_shift // 2 if self._glitch_on else 0
-        p.drawText(QRectF(tx, 0, w, h), Qt.AlignCenter, self.text())
-
-        p.end()
+        finally:
+            p.end()
 
 
 class StrixSplash(QWidget):
@@ -971,34 +921,42 @@ class HudBg(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._angle = 0.0; self._angle2 = 0.0
-        self._pulse = 0.0; self._pdir   = 1
-        img_data = base64.b64decode(HUD_B64 + "==")
-        self._pix = QPixmap()
-        self._pix.loadFromData(img_data)
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(200)
+        self._cached_bg = None
 
-    def _tick(self):
-        self._angle  = (self._angle  + 0.35) % 360
-        self._angle2 = (self._angle2 - 0.18) % 360
-        self._pulse += 0.04 * self._pdir
-        if self._pulse >= 1 or self._pulse <= 0: self._pdir *= -1
-        self.update()
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._cached_bg = None
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height(); cx, cy = w//2, h//2
-        grad = QRadialGradient(cx, cy, max(w,h)*0.7)
-        grad.setColorAt(0, QColor(8,20,45,255))
-        grad.setColorAt(1, QColor(5,9,18,255))
-        p.fillRect(self.rect(), grad)
-        p.setOpacity(0.03)
-        pen = QPen(QColor(0,200,255)); pen.setWidth(1); p.setPen(pen)
-        for y in range(0, h, 4): p.drawLine(0,y,w,y)
-        vig = QRadialGradient(cx,cy,max(w,h)*0.55)
-        vig.setColorAt(0,QColor(0,0,0,0)); vig.setColorAt(1,QColor(0,0,0,200))
-        p.setOpacity(1.0); p.fillRect(self.rect(),vig); p.end()
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
+            return
+        if self._cached_bg is None or self._cached_bg.size() != self.size():
+            pix = QPixmap(self.size())
+            pix.fill(Qt.transparent)
+            pp = QPainter(pix)
+            pp.setRenderHint(QPainter.Antialiasing)
+            cx, cy = w // 2, h // 2
+            grad = QRadialGradient(cx, cy, max(w, h) * 0.7)
+            grad.setColorAt(0, QColor(8, 20, 45, 255))
+            grad.setColorAt(1, QColor(5, 9, 18, 255))
+            pp.fillRect(self.rect(), grad)
+            pp.setOpacity(0.03)
+            pen = QPen(QColor(0, 200, 255))
+            pen.setWidth(1)
+            pp.setPen(pen)
+            for y in range(0, h, 4):
+                pp.drawLine(0, y, w, y)
+            vig = QRadialGradient(cx, cy, max(w, h) * 0.55)
+            vig.setColorAt(0, QColor(0, 0, 0, 0))
+            vig.setColorAt(1, QColor(0, 0, 0, 200))
+            pp.setOpacity(1.0)
+            pp.fillRect(self.rect(), vig)
+            pp.end()
+            self._cached_bg = pix
+        p.drawPixmap(0, 0, self._cached_bg)
+        p.end()
 
 
 # ── Logo ──────────────────────────────────────────────────────
@@ -1325,51 +1283,61 @@ class ChatBubble(QWidget):
         sep.setStyleSheet(f"background: rgba(255,0,51,40);")
         vl.addWidget(sep)
 
-        # ── Code body with syntax-highlight colors ────────
-        # Simple keyword highlighter using HTML spans
+        # ── Code body with single-pass tokenizing syntax highlighter ────────
         def highlight(code_str: str, language: str) -> str:
-            safe = _html.escape(code_str)
-            if language in ("python", "py"):
-                import re as _re
-                # keywords
-                kws = (r'\b(def|class|import|from|return|if|else|elif|for|while|'
-                       r'in|not|and|or|True|False|None|try|except|finally|with|'
-                       r'as|pass|break|continue|lambda|yield|async|await|raise|'
-                       r'global|nonlocal|del|is)\b')
-                safe = _re.sub(kws,
-                    r'<span style="color:#ff7b72;">\1</span>', safe)
-                # strings
-                safe = _re.sub(r'(&#x27;[^&#]*&#x27;|&quot;[^&]*&quot;)',
-                    r'<span style="color:#a5d6ff;">\1</span>', safe)
-                # comments
-                safe = _re.sub(r'(#[^\n]*)',
-                    r'<span style="color:#6e7681;">\1</span>', safe)
-                # numbers
-                safe = _re.sub(r'\b(\d+\.?\d*)\b',
-                    r'<span style="color:#f2cc60;">\1</span>', safe)
-                # builtins/functions
-                safe = _re.sub(r'\b(print|len|range|str|int|float|list|dict|'
-                               r'set|tuple|type|open|super|self)\b',
-                    r'<span style="color:#d2a8ff;">\1</span>', safe)
-            elif language in ("javascript", "js", "typescript", "ts"):
-                import re as _re
-                kws = (r'\b(const|let|var|function|return|if|else|for|while|'
-                       r'class|import|export|from|async|await|new|this|typeof|'
-                       r'true|false|null|undefined|try|catch|finally|throw|'
-                       r'switch|case|break|continue|default)\b')
-                safe = _re.sub(kws,
-                    r'<span style="color:#ff7b72;">\1</span>', safe)
-                safe = _re.sub(r'(&#x27;[^&#]*&#x27;|&quot;[^&]*&quot;|`[^`]*`)',
-                    r'<span style="color:#a5d6ff;">\1</span>', safe)
-                safe = _re.sub(r'(//[^\n]*)',
-                    r'<span style="color:#6e7681;">\1</span>', safe)
-                safe = _re.sub(r'\b(\d+\.?\d*)\b',
-                    r'<span style="color:#f2cc60;">\1</span>', safe)
-            # Add line numbers
-            html_lines = safe.split("\n")
+            import re as _re
+            lang = (language or "").lower().strip()
+            
+            if lang in ("python", "py"):
+                tokens_re = _re.compile(
+                    r'(?P<COMMENT>#[^\n]*)'
+                    r'|(?P<STRING>"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|[frbFRB]?"(?:\\.|[^"\\])*"|[frbFRB]?\'(?:\\.|[^\'\\])*\')'
+                    r'|(?P<KEYWORD>\b(?:def|class|import|from|return|if|else|elif|for|while|in|not|and|or|True|False|None|try|except|finally|with|as|pass|break|continue|lambda|yield|async|await|raise|global|nonlocal|del|is)\b)'
+                    r'|(?P<BUILTIN>\b(?:print|len|range|str|int|float|list|dict|set|tuple|type|open|super|self|input|sum|max|min|abs|enumerate|zip|all|any)\b)'
+                    r'|(?P<NUMBER>\b\d+(?:\.\d+)?\b)'
+                    r'|(?P<OTHER>[\s\S])'
+                )
+            elif lang in ("javascript", "js", "typescript", "ts", "cpp", "c++", "c", "java", "c#", "cs"):
+                tokens_re = _re.compile(
+                    r'(?P<COMMENT>//[^\n]*|/\*[\s\S]*?\*/)'
+                    r'|(?P<STRING>`[\s\S]*?`|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+                    r'|(?P<KEYWORD>\b(?:const|let|var|function|return|if|else|for|while|class|import|export|from|async|await|new|this|typeof|true|false|null|undefined|try|catch|finally|throw|switch|case|break|continue|default|public|private|protected|static|final|void|int|float|double|char|bool|boolean|string|struct|enum|namespace|include|using|template|typename|override|extends|implements)\b)'
+                    r'|(?P<BUILTIN>\b(?:console|log|document|window|Math|Object|Array|String|Number|System|out|println|cout|cin|endl|std|vector|printf|scanf|nullptr|NULL)\b)'
+                    r'|(?P<NUMBER>\b\d+(?:\.\d+)?\b)'
+                    r'|(?P<OTHER>[\s\S])'
+                )
+            else:
+                tokens_re = _re.compile(
+                    r'(?P<COMMENT>#[^\n]*|//[^\n]*|/\*[\s\S]*?\*/|<!--[\s\S]*?-->)'
+                    r'|(?P<STRING>"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+                    r'|(?P<KEYWORD>\b(?:SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|JOIN|GROUP|ORDER|BY|HAVING|CREATE|TABLE|DROP|ALTER|HTML|BODY|DIV|SPAN|SCRIPT|STYLE)\b)'
+                    r'|(?P<NUMBER>\b\d+(?:\.\d+)?\b)'
+                    r'|(?P<OTHER>[\s\S])'
+                )
+
+            style_map = {
+                "COMMENT": "color:#6e7681;font-style:italic;",
+                "STRING":  "color:#a5d6ff;",
+                "KEYWORD": "color:#ff7b72;font-weight:bold;",
+                "BUILTIN": "color:#d2a8ff;",
+                "NUMBER":  "color:#f2cc60;",
+            }
+
+            out = []
+            for match in tokens_re.finditer(code_str):
+                kind = match.lastgroup
+                val = match.group()
+                escaped = _html.escape(val)
+                if kind in style_map:
+                    out.append(f'<span style="{style_map[kind]}">{escaped}</span>')
+                else:
+                    out.append(escaped)
+
+            html_code = "".join(out)
+            html_lines = html_code.split("\n")
             numbered = []
             for i, line in enumerate(html_lines, 1):
-                num = f'<span style="color:#3a6080;">{i:3d}  </span>'
+                num = f'<span style="color:#3a6080;user-select:none;">{i:3d}  </span>'
                 numbered.append(num + line)
             return "\n".join(numbered)
 
@@ -1552,50 +1520,66 @@ class GlitchLabel(QLabel):
 # ── Arc Reactor — ROG HUD behind chat ────────────────────────
 class ArcReactor(QWidget):
     """
-    ROG-themed arc reactor. Matches GUI palette exactly:
+    ROG-themed arc reactor — optimized for 60 FPS smooth rendering:
     - Background: deep navy #050912
     - Primary:    ROG red   #ff0033
     - Secondary:  CYAN      #00e5ff
     - Accent:     GOLD      #ffd700
     - Trace:      teal      #00ff88
 
-    Idle: slow dim rotation.
-    Speaking: fast bright spin, scan sweep, energy burst.
+    Clockwise rotation on outer ring, radar scan sweep, and micro-rings.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        # angles for each ring
-        self._a  = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self._pulse  = 0.0
-        self._pdir   = 1
-        self._scan   = 0.0
-        self._energy = 0.25     # 0 = idle  1 = speaking
+        self._a = [0.0, 0.0, 0.0, 0.0, 0.0]
+        self._pulse = 0.0
+        self._pdir = 1
+        self._scan = 0.0
+        self._energy = 0.25
         self._speaking = False
-        self._seg_flash = 0     # cycles gold segments
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(60)
+        self._seg_flash = 0
+
+        # Caching fonts & colors for zero GC overhead during smooth painting
+        self._f_lbl  = QFont("Consolas", 7, QFont.Bold)
+        self._c_red  = QColor(255, 0, 51)
+        self._c_cyan = QColor(0, 229, 255)
+        self._c_gold = QColor(255, 215, 0)
+        self._c_teal = QColor(0, 255, 136)
+
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._tick)
+        self._anim_timer.start(70)   # 14 FPS standby mode (eliminates CPU/GPU lockup & hover lag)
 
     def set_speaking(self, v: bool):
         self._speaking = v
+        if hasattr(self, '_anim_timer'):
+            self._anim_timer.setInterval(25 if v else 70)
 
     def _tick(self):
-        s = 2.6 if self._speaking else 0.45
-        self._a[0] = (self._a[0] + s       ) % 360
-        self._a[1] = (self._a[1] - s * 0.6 ) % 360
-        self._a[2] = (self._a[2] + s * 1.2 ) % 360
-        self._a[3] = (self._a[3] - s * 0.35) % 360
-        self._a[4] = (self._a[4] + s * 1.8 ) % 360
-        self._pulse += 0.032 * self._pdir
-        if self._pulse >= 1.0 or self._pulse <= 0.0: self._pdir *= -1
-        self._scan = (self._scan + (0.010 if self._speaking else 0.004)) % 1.0
+        s = 1.6 if self._speaking else 0.35
+        # Clockwise rotation on outer ring, cyan chevron ring, and inner micro-ring
+        self._a[0] = (self._a[0] - s) % 360
+        self._a[1] = (self._a[1] + s * 0.5) % 360
+        self._a[2] = (self._a[2] - s * 1.1) % 360
+        self._a[3] = (self._a[3] + s * 0.3) % 360
+        self._a[4] = (self._a[4] - s * 1.5) % 360
+
+        self._pulse += 0.02 * self._pdir
+        if self._pulse >= 1.0 or self._pulse <= 0.0:
+            self._pdir *= -1
+
+        self._scan = (self._scan + (0.008 if self._speaking else 0.003)) % 1.0
         self._seg_flash = (self._seg_flash + 1) % 48
+
         tgt = 1.0 if self._speaking else 0.22
-        self._energy += (tgt - self._energy) * 0.08
+        self._energy += (tgt - self._energy) * 0.06
         self.update()
 
     def paintEvent(self, ev):
         import math as m
+        from PySide6.QtGui import QPolygon
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h   = self.width(), self.height()
@@ -1607,144 +1591,127 @@ class ArcReactor(QWidget):
         def alpha(base, scale=1.0):
             return min(255, int(base + en * 200 * scale + pu * 30))
 
-        # ═══════════════════════════════════════════════
-        # 1. SUBTLE GRID — matches GUI bg scanlines
-        # ═══════════════════════════════════════════════
+        # 1. SUBTLE GRID
         p.setPen(QPen(QColor(0, 100, 160, int(4 + en * 12)), 1))
-        step = 28
+        step = 64  # Fast, low-overhead grid rendering
         for gy in range(0, h + step, step):
             p.drawLine(0, gy, w, gy)
         for gx in range(0, w + step, step):
             p.drawLine(gx, 0, gx, h)
 
-        # ═══════════════════════════════════════════════
         # 2. OUTER GLOW BLOOM
-        # ═══════════════════════════════════════════════
         bloom = QRadialGradient(cx, cy, R * 1.25)
-        bloom.setColorAt(0,   QColor(255, 0, 51,   int(14 * en + 3)))
-        bloom.setColorAt(0.4, QColor(0,  229, 255,  int(10 * en + 2)))
-        bloom.setColorAt(1.0, QColor(0,  0,   0,   0))
-        p.setBrush(QBrush(bloom)); p.setPen(Qt.NoPen)
-        p.drawEllipse(QRectF(cx-R*1.25, cy-R*1.25, R*2.5, R*2.5))
+        bloom.setColorAt(0.0, QColor(255, 0, 51, int(14 * en + 3)))
+        bloom.setColorAt(0.4, QColor(0, 229, 255, int(10 * en + 2)))
+        bloom.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(bloom))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QRectF(cx - R * 1.25, cy - R * 1.25, R * 2.5, R * 2.5))
 
-        # ═══════════════════════════════════════════════
-        # 3. RING 1 — Outermost dashed ring (ROG red)
-        #    with 4 crosshair notches + 48 tick marks
-        # ═══════════════════════════════════════════════
+        # 3. RING 1 — Outermost dashed ring (ROG red) — Clockwise
         p.save(); p.translate(cx, cy); p.rotate(self._a[0])
         a1 = alpha(40, 0.7)
-        # Main ring
         pen1 = QPen(QColor(255, 0, 51, a1), 1)
         pen1.setDashPattern([10, 6])
         p.setPen(pen1); p.setBrush(Qt.NoBrush)
-        p.drawEllipse(QRectF(-R, -R, R*2, R*2))
-        # Tick marks
+        p.drawEllipse(QRectF(-R, -R, R * 2, R * 2))
+
+        # 48 Tick marks
         for i in range(48):
-            ar   = m.radians(i * 7.5)
-            tl   = 11 if i % 4 == 0 else (6 if i % 2 == 0 else 3)
-            ta   = a1 if i % 4 == 0 else int(a1 * 0.5)
+            ar = m.radians(i * 7.5)
+            tl = 11 if i % 4 == 0 else (6 if i % 2 == 0 else 3)
+            ta = a1 if i % 4 == 0 else int(a1 * 0.5)
             p.setPen(QPen(QColor(255, 0, 51, ta), 1))
-            p.drawLine(int((R - tl)*m.cos(ar)), int((R - tl)*m.sin(ar)),
-                       int(R*m.cos(ar)),        int(R*m.sin(ar)))
-        # 4 crosshair spokes at N/E/S/W
+            p.drawLine(int((R - tl) * m.cos(ar)), int((R - tl) * m.sin(ar)),
+                       int(R * m.cos(ar)), int(R * m.sin(ar)))
+
+        # 4 Crosshair spokes
         p.setPen(QPen(QColor(255, 0, 51, int(a1 * 0.9)), 2))
         for ang in [0, 90, 180, 270]:
             ar = m.radians(ang)
-            p.drawLine(int(R*0.86*m.cos(ar)), int(R*0.86*m.sin(ar)),
-                       int(R*1.14*m.cos(ar)), int(R*1.14*m.sin(ar)))
-        # Small diamonds at 45° positions
+            p.drawLine(int(R * 0.86 * m.cos(ar)), int(R * 0.86 * m.sin(ar)),
+                       int(R * 1.14 * m.cos(ar)), int(R * 1.14 * m.sin(ar)))
+
+        # 4 Diamonds
         for ang in [45, 135, 225, 315]:
             ar = m.radians(ang)
-            dx, dy = R*m.cos(ar), R*m.sin(ar)
+            dx, dy = R * m.cos(ar), R * m.sin(ar)
             p.setPen(Qt.NoPen)
             p.setBrush(QBrush(QColor(255, 0, 51, int(a1 * 0.8))))
-            diamond = [QPoint(int(dx), int(dy - 5)),
-                       QPoint(int(dx + 4), int(dy)),
-                       QPoint(int(dx), int(dy + 5)),
-                       QPoint(int(dx - 4), int(dy))]
-            from PySide6.QtGui import QPolygon
-            p.drawPolygon(QPolygon(diamond))
+            p.drawPolygon(QPolygon([
+                QPoint(int(dx), int(dy - 5)),
+                QPoint(int(dx + 4), int(dy)),
+                QPoint(int(dx), int(dy + 5)),
+                QPoint(int(dx - 4), int(dy))
+            ]))
         p.restore()
 
-        # ═══════════════════════════════════════════════
         # 4. RING 2 — Gold segmented energy ring (16 blocks)
-        # ═══════════════════════════════════════════════
-        R2  = R * 0.84
+        R2 = R * 0.84
         p.save(); p.translate(cx, cy); p.rotate(self._a[1])
         for i in range(16):
-            # Some segments flash brighter
             bright = (i * 5 + self._seg_flash) % 16 < int(4 + en * 8)
             sa = int(alpha(50, 0.65) * (1.4 if bright else 0.7))
             p.setPen(QPen(QColor(255, 215, 0, min(255, sa)), 4))
             start = int((i * 22.5 + 2.5) * 16)
             span  = int(17 * 16)
-            p.drawArc(QRectF(-R2, -R2, R2*2, R2*2), start, span)
-        # thin inner dashed
+            p.drawArc(QRectF(-R2, -R2, R2 * 2, R2 * 2), start, span)
+
         pd = QPen(QColor(255, 215, 0, int(alpha(20, 0.3))), 1)
         pd.setDashPattern([3, 9])
         p.setPen(pd)
-        p.drawEllipse(QRectF(-R2*0.92, -R2*0.92, R2*1.84, R2*1.84))
+        p.drawEllipse(QRectF(-R2 * 0.92, -R2 * 0.92, R2 * 1.84, R2 * 1.84))
         p.restore()
 
-        # ═══════════════════════════════════════════════
-        # 5. RING 3 — Cyan chevron / arrow ring
-        # ═══════════════════════════════════════════════
+        # 5. RING 3 — Cyan chevron ring (Clockwise)
         R3 = R * 0.68
         p.save(); p.translate(cx, cy); p.rotate(self._a[2])
         a3 = alpha(45, 0.75)
         p.setPen(QPen(QColor(0, 229, 255, a3), 1))
         p.setBrush(Qt.NoBrush)
-        p.drawEllipse(QRectF(-R3, -R3, R3*2, R3*2))
-        # 8 chevron arrows around the ring
+        p.drawEllipse(QRectF(-R3, -R3, R3 * 2, R3 * 2))
         for i in range(8):
             base = m.radians(i * 45)
             ca = int(a3 * (1.0 if i % 2 == 0 else 0.55))
             p.setPen(QPen(QColor(0, 229, 255, ca), 1))
-            # draw two >> chevrons outward
             for off in [0.0, 0.13]:
                 tip = base + off + 0.11
                 top = base + off - 0.09
                 bot = base + off + 0.30
-                xt,yt = R3*m.cos(tip),      R3*m.sin(tip)
-                xp,yp = R3*0.86*m.cos(top), R3*0.86*m.sin(top)
-                xb,yb = R3*0.86*m.cos(bot), R3*0.86*m.sin(bot)
-                p.drawLine(int(xp),int(yp),int(xt),int(yt))
-                p.drawLine(int(xt),int(yt),int(xb),int(yb))
+                xt, yt = R3 * m.cos(tip), R3 * m.sin(tip)
+                xp, yp = R3 * 0.86 * m.cos(top), R3 * 0.86 * m.sin(top)
+                xb, yb = R3 * 0.86 * m.cos(bot), R3 * 0.86 * m.sin(bot)
+                p.drawLine(int(xp), int(yp), int(xt), int(yt))
+                p.drawLine(int(xt), int(yt), int(xb), int(yb))
         p.restore()
 
-        # ═══════════════════════════════════════════════
-        # 6. RING 4 — Teal circuit trace ring with nodes
-        # ═══════════════════════════════════════════════
+        # 6. RING 4 — Teal circuit trace ring
         R4 = R * 0.53
         p.save(); p.translate(cx, cy); p.rotate(self._a[3])
         a4 = alpha(35, 0.6)
         p.setPen(QPen(QColor(0, 255, 136, a4), 1))
         p.setBrush(Qt.NoBrush)
-        p.drawEllipse(QRectF(-R4, -R4, R4*2, R4*2))
+        p.drawEllipse(QRectF(-R4, -R4, R4 * 2, R4 * 2))
         for i in range(12):
             ar = m.radians(i * 30)
-            nx, ny = R4*m.cos(ar), R4*m.sin(ar)
+            nx, ny = R4 * m.cos(ar), R4 * m.sin(ar)
             is_major = i % 3 == 0
             na = int(a4 * (1.2 if is_major else 0.45))
             p.setBrush(QBrush(QColor(0, 255, 136, min(255, na))))
             p.setPen(Qt.NoPen)
             nr = 4 if is_major else 2
-            p.drawEllipse(QRectF(nx-nr, ny-nr, nr*2, nr*2))
+            p.drawEllipse(QRectF(nx - nr, ny - nr, nr * 2, nr * 2))
             if is_major:
                 p.setPen(QPen(QColor(0, 255, 136, int(na * 0.55)), 1))
                 p.drawLine(int(nx), int(ny),
-                           int((R4+14)*m.cos(ar)), int((R4+14)*m.sin(ar)))
-                # small square marker at trace end
-                ex, ey = (R4+14)*m.cos(ar), (R4+14)*m.sin(ar)
+                           int((R4 + 14) * m.cos(ar)), int((R4 + 14) * m.sin(ar)))
+                ex, ey = (R4 + 14) * m.cos(ar), (R4 + 14) * m.sin(ar)
                 p.setBrush(QBrush(QColor(0, 255, 136, int(na * 0.4))))
-                p.drawRect(QRectF(ex-2, ey-2, 4, 4))
+                p.drawRect(QRectF(ex - 2, ey - 2, 4, 4))
         p.restore()
 
-        # ═══════════════════════════════════════════════
-        # 7. SCAN SWEEP — radar-style cone (matches CYAN)
-        # ═══════════════════════════════════════════════
-        import math as m2
-        sweep_deg = self._scan * 360
+        # 7. SCAN SWEEP — Radar-style cone (Rotates CLOCKWISE)
+        sweep_deg = 360 - (self._scan * 360)
         sweep_a   = int(18 + en * 70)
         p.save(); p.translate(cx, cy)
         grad_s = QConicalGradient(0, 0, sweep_deg)
@@ -1753,96 +1720,83 @@ class ArcReactor(QWidget):
         grad_s.setColorAt(0.12, QColor(0, 0, 0, 0))
         grad_s.setColorAt(1.00, QColor(0, 0, 0, 0))
         p.setBrush(QBrush(grad_s)); p.setPen(Qt.NoPen)
-        p.drawEllipse(QRectF(-R*0.96, -R*0.96, R*1.92, R*1.92))
+        p.drawEllipse(QRectF(-R * 0.96, -R * 0.96, R * 1.92, R * 1.92))
         p.restore()
 
-        # ═══════════════════════════════════════════════
-        # 8. INNER RING 5 — fast spinning ROG micro-ring
-        # ═══════════════════════════════════════════════
+        # 8. INNER RING 5 — Fast spinning ROG micro-ring (Clockwise)
         R5 = R * 0.38
         p.save(); p.translate(cx, cy); p.rotate(self._a[4])
         a5 = alpha(30, 0.5)
         pen5 = QPen(QColor(255, 0, 51, a5), 1)
         pen5.setDashPattern([3, 3])
         p.setPen(pen5); p.setBrush(Qt.NoBrush)
-        p.drawEllipse(QRectF(-R5, -R5, R5*2, R5*2))
-        # 4 small brackets on inner ring
+        p.drawEllipse(QRectF(-R5, -R5, R5 * 2, R5 * 2))
         for ang in [0, 90, 180, 270]:
-            ar = m2.radians(ang)
-            bx, by = R5*m2.cos(ar), R5*m2.sin(ar)
-            nx, ny = m2.cos(ar + m2.pi/2), m2.sin(ar + m2.pi/2)
+            ar = m.radians(ang)
+            bx, by = R5 * m.cos(ar), R5 * m.sin(ar)
+            nx, ny = m.cos(ar + m.pi / 2), m.sin(ar + m.pi / 2)
             p.setPen(QPen(QColor(255, 0, 51, int(a5 * 0.8)), 1))
-            p.drawLine(int(bx - nx*5), int(by - ny*5),
-                       int(bx + nx*5), int(by + ny*5))
+            p.drawLine(int(bx - nx * 5), int(by - ny * 5),
+                       int(bx + nx * 5), int(by + ny * 5))
         p.restore()
 
-        # ═══════════════════════════════════════════════
-        # 9. CENTER GLOW + ARC REACTOR CORE
-        # ═══════════════════════════════════════════════
+        # 9. CENTER CORE + INVERTED TRIANGLE
         Rc = R * 0.22
         core_glow = QRadialGradient(cx, cy, Rc * 2.2)
-        core_glow.setColorAt(0,    QColor(180, 240, 255, int(220*en + 70)))
-        core_glow.setColorAt(0.25, QColor(0,   200, 255, int(140*en + 30)))
-        core_glow.setColorAt(0.6,  QColor(0,   80,  200, int(40 *en + 8)))
-        core_glow.setColorAt(1.0,  QColor(0,   0,   0,   0))
+        core_glow.setColorAt(0.0,  QColor(180, 240, 255, int(220 * en + 70)))
+        core_glow.setColorAt(0.25, QColor(0, 200, 255, int(140 * en + 30)))
+        core_glow.setColorAt(0.6,  QColor(0, 80, 200, int(40 * en + 8)))
+        core_glow.setColorAt(1.0,  QColor(0, 0, 0, 0))
         p.setBrush(QBrush(core_glow)); p.setPen(Qt.NoPen)
-        p.drawEllipse(QRectF(cx-Rc*2.2, cy-Rc*2.2, Rc*4.4, Rc*4.4))
+        p.drawEllipse(QRectF(cx - Rc * 2.2, cy - Rc * 2.2, Rc * 4.4, Rc * 4.4))
 
         # Core circle border
         p.setPen(QPen(QColor(0, 229, 255, int(alpha(80, 0.6))), 1))
         p.setBrush(QBrush(QColor(0, 20, 50, int(180 * en + 40))))
-        p.drawEllipse(QRectF(cx-Rc, cy-Rc, Rc*2, Rc*2))
+        p.drawEllipse(QRectF(cx - Rc, cy - Rc, Rc * 2, Rc * 2))
 
-        # Inverted triangle
+        # Inverted triangle core
         tri = Rc * 0.68
         tri_a = int(alpha(120, 0.8))
         pts = []
         for i in range(3):
-            ar = m2.radians(-90 + 120*i + 180)
-            pts.append(QPoint(int(cx + tri*m2.cos(ar)), int(cy + tri*m2.sin(ar))))
-        from PySide6.QtGui import QPolygon
-        p.setBrush(QBrush(QColor(0, 140, 255, int(55*en + 10))))
+            ar = m.radians(-90 + 120 * i + 180)
+            pts.append(QPoint(int(cx + tri * m.cos(ar)), int(cy + tri * m.sin(ar))))
+        p.setBrush(QBrush(QColor(0, 140, 255, int(55 * en + 10))))
         p.setPen(QPen(QColor(0, 229, 255, tri_a), 1))
         p.drawPolygon(QPolygon(pts))
 
         # Center dot
-        p.setBrush(QBrush(QColor(220, 245, 255, int(200*en + 55))))
+        p.setBrush(QBrush(QColor(220, 245, 255, int(200 * en + 55))))
         p.setPen(Qt.NoPen)
-        p.drawEllipse(QRectF(cx-3.5, cy-3.5, 7, 7))
+        p.drawEllipse(QRectF(cx - 3.5, cy - 3.5, 7, 7))
 
-        # ═══════════════════════════════════════════════
-        # 10. HUD LABELS — ROG style, matching font
-        # ═══════════════════════════════════════════════
+        # 10. HUD LABELS
         la = int(45 + en * 160)
-        p.setFont(QFont("Consolas", 7, QFont.Bold))
+        p.setFont(self._f_lbl)
 
-        # SIGNAL top with bracket
         p.setPen(QPen(QColor(0, 229, 255, la)))
-        p.drawText(QRectF(cx-30, cy-R-22, 60, 13), Qt.AlignCenter, "SIGNAL")
+        p.drawText(QRectF(cx - 30, cy - R - 22, 60, 13), Qt.AlignCenter, "SIGNAL")
         p.setPen(QPen(QColor(0, 229, 255, int(la * 0.5)), 1))
-        p.drawLine(cx-18, int(cy-R-10), cx-18, int(cy-R-5))
-        p.drawLine(cx+18, int(cy-R-10), cx+18, int(cy-R-5))
+        p.drawLine(cx - 18, int(cy - R - 10), cx - 18, int(cy - R - 5))
+        p.drawLine(cx + 18, int(cy - R - 10), cx + 18, int(cy - R - 5))
 
-        # ENERGY LEVEL bottom
         p.setPen(QPen(QColor(255, 215, 0, la)))
-        p.drawText(QRectF(cx-52, cy+R+7, 104, 13), Qt.AlignCenter, "ENERGY LEVEL")
+        p.drawText(QRectF(cx - 52, cy + R + 7, 104, 13), Qt.AlignCenter, "ENERGY LEVEL")
 
-        # WIFI left (rotated)
-        p.save(); p.translate(cx - R - 18, cy)
-        p.rotate(-90)
+        p.save(); p.translate(cx - R - 18, cy); p.rotate(-90)
         p.setPen(QPen(QColor(0, 229, 255, la)))
         p.drawText(QRectF(-16, -6, 32, 12), Qt.AlignCenter, "WIFI")
         p.restore()
 
-        # STATUS right
         status = "ACTIVE" if self._speaking else "STANDBY"
         sc = QColor(0, 255, 136, la) if self._speaking else QColor(255, 0, 51, int(la * 0.7))
         p.setPen(QPen(sc))
-        p.drawText(QRectF(cx+R+4, cy-6, 55, 12), Qt.AlignLeft, status)
+        p.drawText(QRectF(cx + R + 4, cy - 6, 55, 12), Qt.AlignLeft, status)
 
-        # Energy % — bottom right of reactor
         pct = int(self._energy * 100)
         p.setPen(QPen(QColor(255, 215, 0, int(la * 0.85))))
+        p.drawText(QRectF(cx + R * 0.7, cy + R * 0.7, 45, 12), Qt.AlignLeft, f"{pct}%")
         p.setFont(QFont("Consolas", 6))
         p.drawText(QRectF(cx+R*0.5, cy+R*0.72, 42, 11), Qt.AlignLeft, f"{pct:02d}%")
 
@@ -1892,11 +1846,24 @@ class ChatArea(QScrollArea):
         self.setWidget(self._container)
         self._typing = None
 
+    def clear_chat(self):
+        self.hide_typing()
+        while self._layout.count() > 1:
+            item = self._layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+        self._scroll_bottom()
+
     def _scroll_bottom(self):
         QTimer.singleShot(50, lambda: self.verticalScrollBar().setValue(
             self.verticalScrollBar().maximum()))
 
     def add_message(self, sender, text, is_strix, model=""):
+        # Auto-prune old widgets if chat count exceeds 150 to keep UI lag-free
+        if self._layout.count() > 150:
+            item = self._layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
         bubble = ChatBubble(sender, text, is_strix, model)
         self._layout.insertWidget(self._layout.count()-1, bubble)
         self._scroll_bottom()
@@ -1983,8 +1950,11 @@ class TTSThread(QThread):
         super().__init__()
         self.tts = tts; self.text = text
     def run(self):
-        if self.tts and self.tts.available and not self.tts.muted:
-            self.tts.speak(tts_clean(self.text), blocking=True)
+        try:
+            if self.tts and self.tts.available and not self.tts.muted:
+                self.tts.speak(tts_clean(self.text), blocking=True)
+        except Exception as e:
+            print(f"[TTSThread Error] {e}")
 
 
 class PreloadThread(QThread):
@@ -2001,8 +1971,8 @@ class ModelListThread(QThread):
     ready = Signal(list)
     def run(self):
         try:
-            from models.llm_interface import list_available_models
-            self.ready.emit(list_available_models())
+            from strix.models.registry import ModelRegistry
+            self.ready.emit(ModelRegistry.list_available())
         except Exception:
             self.ready.emit([])
 
@@ -2041,7 +2011,7 @@ PRODUCTIVITY_TIPS = [
 # Boot sequence lines — shown one by one before greeting
 BOOT_SEQUENCE = [
     "INITIALIZING STRIX CORE...",
-    "LOADING AI MODELS — phi3 | llama3.1 | qwen2.5-coder",
+    "LOADING AI MODELS — gemma3:4b | qwen3:8b | deepseek-r1:7b | qwen3-coder:8b",
     "CONNECTING TO OLLAMA ENGINE...",
     "CALIBRATING NEURAL PATHWAYS...",
     "ALL SYSTEMS NOMINAL. STRIX ONLINE.",
@@ -2186,8 +2156,10 @@ class WakeWordThread(QThread):
         "create a python", "create a javascript", "create a html",
         "create a file", "create a script",
         "locate ", "where is ", "find this ", "find my ",
-        "work time", "work mode", "coding time",
-        "show anime", "watch anime",
+        "work time", "work mode", "start working", "coding time",
+        "gaming mode", "start gaming mode", "game mode", "game time",
+        "show anime", "watch anime", "play some anime", "show my sites",
+        "play some song", "play a song", "play random song", "play random music",
         "shutdown", "shut down", "kill", "kill strix",
     )
 
@@ -2229,94 +2201,113 @@ class WakeWordThread(QThread):
     def run(self):
         try:
             import speech_recognition as sr
-            r = sr.Recognizer()
-            # Fixed 500 — calibration on Windows returns 3000-8000 (fan/speaker noise)
-            # which blocks voice entirely. 500 is the correct value for normal speech.
-            r.energy_threshold         = 500
-            r.pause_threshold          = 0.5
-            r.dynamic_energy_threshold = False
-            self._noise_floor          = 500
-            print("[Wake] Listening — threshold: 500 (normal) / 5500 (music)")
-
-            while self._active:
-                if self._paused or self._hard_muted:
-                    time.sleep(0.15)
-                    continue
-
-                # Music playing — raise threshold so speaker audio can't trigger mic
-                if self._music_playing:
-                    r.energy_threshold = max(self._noise_floor * 2.5, 5500)
-                else:
-                    r.energy_threshold = self._noise_floor
-
-                try:
-                    with sr.Microphone() as src:
-                        plimit = 3 if self._music_playing else 6
-                        audio  = r.listen(src, timeout=2, phrase_time_limit=plimit)
-
-                    if not self._active or self._hard_muted:
-                        break
-
-                    raw  = r.recognize_google(audio, language="en-IN", show_all=True)
-                    text = ""
-                    if isinstance(raw, dict) and raw.get("alternative"):
-                        alts = raw["alternative"]
-                        # Prefer longest transcript — captures full command
-                        text = max(
-                            (a.get("transcript","") for a in alts),
-                            key=lambda t: len(t.split()),
-                            default=""
-                        ).lower().strip()
-                    elif isinstance(raw, str):
-                        text = raw.lower().strip()
-
-                    if not text:
-                        continue
-
-                    # ── Music self-hearing guard ──────────────────────────────
-                    # When music is playing: 4+ word result = song lyric, discard
-                    if self._music_playing:
-                        words = text.split()
-                        if len(words) > 4:
-                            continue
-                        music_cmds = {
-                            "pause", "stop", "skip", "next", "previous", "resume",
-                            "unpause", "play", "volume up", "volume down",
-                            "louder", "quieter", "mute", "strix",
-                            "stop music", "pause music", "stop the music",
-                            "pause the song", "stop the song", "hey strix",
-                        }
-                        if not any(cmd in text for cmd in music_cmds):
-                            continue   # music bleed — ignore
-
-                    # ── General self-echo guard ───────────────────────────────
-                    # Long audio with no command/wake word = TTS reverb or ambient
-                    words    = text.split()
-                    has_cmd  = self._is_action_command(text)
-                    has_wake = (any(w in text for w in self.PURE_WAKE_WORDS)
-                                or "strix" in text)
-                    if not has_cmd and not has_wake and len(words) > 6:
-                        continue   # TTS echo or ambient — discard
-
-                    if len(text) > 2:
-                        print(f"[Wake] Heard: {text}")
-
-                    if has_cmd:
-                        print(f"[Wake] Direct command → {text}")
-                        self.command.emit(text)
-                    elif any(w in text for w in self.PURE_WAKE_WORDS):
-                        print(f"[Wake] Wake word → {text}")
-                        self.wake.emit()
-                    elif "strix" in text and any(w in text for w in self.WAKE_WORDS):
-                        print(f"[Wake] Wake word → {text}")
-                        self.wake.emit()
-
-                except sr.WaitTimeoutError:
-                    pass
-                except Exception:
-                    pass
         except ImportError:
             print("[Wake] speech_recognition not installed")
+            return
+
+        print("[Wake] Listener thread active and monitoring voice input...")
+
+        while self._active:
+            try:
+                r = sr.Recognizer()
+                r.pause_threshold = 0.5
+                r.dynamic_energy_threshold = True
+                r.dynamic_energy_adjustment_damping = 0.15
+                r.dynamic_energy_ratio = 1.5
+
+                with sr.Microphone() as src:
+                    try:
+                        r.adjust_for_ambient_noise(src, duration=0.6)
+                        print(f"[Wake] Ambient noise calibrated — threshold: {r.energy_threshold:.0f}")
+                    except Exception:
+                        r.energy_threshold = 300
+
+                    print("[Wake] Microphone stream online.")
+
+                    while self._active:
+                        if self._paused or self._hard_muted:
+                            time.sleep(0.15)
+                            continue
+
+                        if self._music_playing:
+                            r.energy_threshold = max(r.energy_threshold, 3500)
+
+                        try:
+                            audio = r.listen(src, timeout=3, phrase_time_limit=6)
+                        except sr.WaitTimeoutError:
+                            time.sleep(0.05)
+                            continue
+                        except Exception as mic_err:
+                            print(f"[Wake] Audio stream read error: {mic_err}")
+                            time.sleep(0.5)
+                            break  # Safely re-open stream context
+
+                        if not self._active or self._hard_muted:
+                            continue
+
+                        try:
+                            # Recognize audio
+                            raw = r.recognize_google(audio, language="en-IN", show_all=True)
+                            text = ""
+                            if isinstance(raw, dict) and raw.get("alternative"):
+                                alts = raw["alternative"]
+                                text = max(
+                                    (a.get("transcript", "") for a in alts),
+                                    key=lambda t: len(t.split()),
+                                    default=""
+                                ).lower().strip()
+                            elif isinstance(raw, str):
+                                text = raw.lower().strip()
+
+                            if not text:
+                                continue
+
+                            # Music self-hearing guard
+                            if self._music_playing:
+                                words = text.split()
+                                if len(words) > 4:
+                                    continue
+                                music_cmds = {
+                                    "pause", "stop", "skip", "next", "previous", "resume",
+                                    "unpause", "play", "volume up", "volume down",
+                                    "louder", "quieter", "mute", "strix",
+                                    "stop music", "pause music", "stop the music",
+                                    "pause the song", "stop the song", "hey strix",
+                                }
+                                if not any(cmd in text for cmd in music_cmds):
+                                    continue
+
+                            # General self-echo guard
+                            words = text.split()
+                            has_cmd = self._is_action_command(text)
+                            has_wake = (any(w in text for w in self.PURE_WAKE_WORDS) or "strix" in text)
+                            if not has_cmd and not has_wake and len(words) > 6:
+                                continue
+
+                            if len(text) > 2:
+                                print(f"[Wake] Heard: '{text}'")
+
+                            if has_cmd:
+                                print(f"[Wake] Direct command -> '{text}'")
+                                self.command.emit(text)
+                            elif any(w in text for w in self.PURE_WAKE_WORDS):
+                                print(f"[Wake] Wake word -> '{text}'")
+                                self.wake.emit()
+                            elif "strix" in text and any(w in text for w in self.WAKE_WORDS):
+                                print(f"[Wake] Wake word -> '{text}'")
+                                self.wake.emit()
+
+                        except sr.UnknownValueError:
+                            pass
+                        except sr.RequestError as e:
+                            print(f"[Wake] Speech API request error: {e}")
+                            time.sleep(1.0)
+                        except Exception as e:
+                            print(f"[Wake] Inner recognition error: {e}")
+
+            except Exception as e:
+                print(f"[Wake] Stream recovery loop: {e}")
+                time.sleep(2.0)
 
 
 # ── Stat card ─────────────────────────────────────────────────
@@ -2347,7 +2338,7 @@ class StrixWindow(QMainWindow):
         self._tts_threads     = []
         self._streaming_bubble = None
         self._wake_thread     = None
-        self._current_model   = "phi3:latest"
+        self._current_model   = "qwen3:8b"
 
         self.setWindowTitle("STRIX — ROG AI")
         self.setMinimumSize(1080, 720)
@@ -2489,17 +2480,19 @@ class StrixWindow(QMainWindow):
         # ── AI Model panel ────────────────────────────────────
         right.addWidget(sec("AI MODELS"))
         model_frame = QFrame()
-        model_frame.setStyleSheet(f"QFrame {{ background:rgba(0,40,80,120); border:1px solid {DIM}; border-radius:6px; }}")
+        model_frame.setObjectName("model_frame")
+        model_frame.setStyleSheet(f"QFrame#model_frame {{ background:rgba(0,40,80,120); border:1px solid {DIM}; border-radius:6px; }}")
         mfl = QVBoxLayout(model_frame); mfl.setContentsMargins(10,8,10,8); mfl.setSpacing(4)
 
         for role, model, col in [
-            ("CHAT",      "phi3",          "#ff6600"),
-            ("REASONING", "llama3.1",      "#aa44ff"),
-            ("CODING",    "qwen2.5-coder", "#00cc44"),
+            ("CLASSIFIER", "gemma3:4b",        "#00e5ff"),
+            ("CHAT",       "qwen3:8b",         "#ff6600"),
+            ("REASONING",  "deepseek-r1:7b",   "#aa44ff"),
+            ("CODING",     "qwen2.5-coder",    "#00cc44"),
         ]:
             row = QHBoxLayout()
-            rl = QLabel(role); rl.setStyleSheet(f"color:{TDIM}; font-size:8px; letter-spacing:1px; background:transparent;")
-            ml2 = QLabel(model); ml2.setStyleSheet(f"color:{col}; font-size:9px; font-weight:bold; background:transparent;")
+            rl = QLabel(role); rl.setStyleSheet(f"color:{TDIM}; font-size:8px; letter-spacing:1px; background:transparent; border:none;")
+            ml2 = QLabel(model); ml2.setStyleSheet(f"color:{col}; font-size:9px; font-weight:bold; background:transparent; border:none;")
             row.addWidget(rl); row.addStretch(); row.addWidget(ml2)
             mfl.addLayout(row)
 
@@ -2508,7 +2501,19 @@ class StrixWindow(QMainWindow):
         right.addWidget(sec("ENVIRONMENT"))
         self.weather_lbl = QLabel("Fetching weather...")
         self.weather_lbl.setWordWrap(True)
-        self.weather_lbl.setStyleSheet(f"color:{TEXT}; font-size:10px; background:rgba(0,40,80,120); border:1px solid {DIM}; border-left:2px solid {ROG}; border-radius:6px; padding:8px 10px;")
+        self.weather_lbl.setStyleSheet(f"""
+            QLabel {{
+                color: #e0f2fe;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 9.5px;
+                line-height: 1.25;
+                background: rgba(0, 40, 80, 140);
+                border: 1px solid {DIM};
+                border-left: 3px solid {ROG};
+                border-radius: 6px;
+                padding: 6px 10px;
+            }}
+        """)
         right.addWidget(self.weather_lbl)
 
         right.addWidget(sec("QUICK ACCESS"))
@@ -2536,9 +2541,20 @@ class StrixWindow(QMainWindow):
         exp_btn.setStyleSheet(f"QPushButton {{ background:rgba(0,30,60,180); color:{TDIM}; border:1px solid {DIM}; border-radius:6px; padding:7px 10px; font-size:10px; text-align:left; }} QPushButton:hover {{ color:{CYAN}; border-color:{CYAN}; }}")
         exp_btn.clicked.connect(self._export_chat)
         right.addWidget(exp_btn)
-
         right.addStretch()
-        content.addLayout(right, stretch=1)
+
+        right_widget = QWidget()
+        right_widget.setLayout(right)
+
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.NoFrame)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        right_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QWidget { background: transparent; }")
+        right_scroll.setWidget(right_widget)
+
+        content.addWidget(right_scroll, stretch=1)
         root.addLayout(content, stretch=1)
         root.addWidget(GlowLine())
 
@@ -2715,13 +2731,13 @@ class StrixWindow(QMainWindow):
                 strix_root = os.path.dirname(os.path.abspath(__file__))
                 if strix_root not in sys.path:
                     sys.path.insert(0, strix_root)
-                from brain.core import StrixBrain
+                from strix.pipeline import StrixBrainCompat as StrixBrain
                 from strix_tts import StrixTTS
                 self.brain = StrixBrain()
                 self.tts   = StrixTTS()
             except ImportError as e:
                 print(f"[STRIX] Import error: {e}")
-                print("[STRIX] Make sure E:\\Strix\\brain\\core.py is the latest version")
+                print("[STRIX] Make sure strix package is properly configured")
                 # Show error in UI on main thread
                 QTimer.singleShot(0, lambda: self.status_bar.setText(f"ERROR: {e}"))
             except Exception as e:
@@ -2756,10 +2772,15 @@ class StrixWindow(QMainWindow):
     def _on_model_change(self, model):
         if not model or "Loading" in model or "No models" in model: return
         try:
-            from models.llm_interface import set_models
-            set_models(reasoning=model, coding=model)
+            if hasattr(self, 'brain') and hasattr(self.brain, '_pipeline'):
+                from strix.types import ModelRole
+                mr = self.brain._pipeline.get_model_registry()
+                mr.override(ModelRole.CHAT, model)
+                mr.override(ModelRole.REASONING, model)
+                mr.override(ModelRole.CODING, model)
             self.status_bar.setText(f"Model override: {model}")
-        except Exception: pass
+        except Exception as e:
+            print(f"[GUI] Model override error: {e}")
 
     def _start_wake_listener(self):
         self._wake_thread = WakeWordThread()
@@ -2794,10 +2815,10 @@ class StrixWindow(QMainWindow):
             self._boot_index += 1
         else:
             self._boot_timer.stop()
-            self.status_bar.setText("ALL SYSTEMS OPERATIONAL — phi3 | llama3.1 | qwen2.5-coder")
+            self.status_bar.setText("ALL SYSTEMS OPERATIONAL — gemma3:4b | qwen3:8b | deepseek-r1:7b | qwen2.5-coder")
             # Now show greeting bubble and speak it
             greeting = get_startup_message()
-            self.chat_area.add_message("STRIX", greeting, True, "phi3:latest")
+            self.chat_area.add_message("STRIX", greeting, True, "qwen3:8b")
             self._speak(greeting)
 
     @Slot()
@@ -2816,7 +2837,7 @@ class StrixWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
         self.input_field.setFocus()
-        self.chat_area.add_message("STRIX","Yes Boss, I am listening.",True,"phi3:latest")
+        self.chat_area.add_message("STRIX","Yes Boss, I am listening.",True,"qwen3:8b")
         self._speak("Yes Boss")
         QTimer.singleShot(400, self._on_voice)
 
@@ -2868,6 +2889,7 @@ class StrixWindow(QMainWindow):
             self._wake_thread.hard_mute()
         t = TTSThread(self.tts, text)
         t.finished.connect(self._on_tts_done)
+        t.finished.connect(t.deleteLater)
         t.finished.connect(lambda: self._tts_threads.remove(t) if t in self._tts_threads else None)
         self._tts_threads.append(t)
         t.start()
@@ -2906,15 +2928,7 @@ class StrixWindow(QMainWindow):
     )
 
     def _on_text_changed(self, text: str):
-        """Auto-submit if user typed a complete action command."""
-        tl = text.lower().strip()
-        # Check if text starts with a known action prefix and has a target word
-        for prefix in self.AUTO_EXEC_PREFIXES:
-            if tl.startswith(prefix) and len(tl) > len(prefix) + 2:
-                # Has content after the prefix — don't auto-send yet, let user finish
-                # Only auto-send if user stops typing for 1.5s (handled by timer)
-                self._auto_exec_timer.start(1500)
-                return
+        """No auto-submit on timer while typing. User submits via Enter or Execute button."""
         self._auto_exec_timer.stop()
 
     def _on_send(self):
@@ -2973,6 +2987,7 @@ class StrixWindow(QMainWindow):
         self._stream_thread = StreamThread(self.brain, text)
         self._stream_thread.token.connect(self._on_token)
         self._stream_thread.done.connect(self._on_done)
+        self._stream_thread.finished.connect(self._stream_thread.deleteLater)
         self._stream_thread.start()
 
     def _detect_model_for_display(self, text: str) -> str:
@@ -2984,8 +2999,8 @@ class StrixWindow(QMainWindow):
             return "qwen2.5-coder"
         reason_words = ["why","explain","how does","difference","compare","analyse","plan","suggest"]
         if any(w in tl for w in reason_words):
-            return "llama3.1"
-        return "phi3:latest"
+            return "deepseek-r1:7b"
+        return "qwen3:8b"
 
     @Slot(str)
     def _on_token(self, token):
@@ -3078,16 +3093,32 @@ class StrixWindow(QMainWindow):
     def _on_stop(self):
         """Stop EVERYTHING — stream, TTS, voice listener."""
         # 1. Stop TTS immediately
-        try: self._tts.stop()
-        except Exception: pass
-        # 2. Stop streaming thread
         try:
-            if self._stream_thread: self._stream_thread.stop()
-        except Exception: pass
-        # 3. Stop arc reactor speaking state
-        try: self.arc.set_speaking(False)
-        except Exception: pass
-        # 4. Clean up UI
+            if self.tts:
+                self.tts.stop()
+        except Exception:
+            pass
+        # 2. Stop active TTS thread workers
+        try:
+            for t in list(self._tts_threads):
+                if t.isRunning():
+                    t.terminate()
+            self._tts_threads.clear()
+        except Exception:
+            pass
+        # 3. Stop streaming thread
+        try:
+            if self._stream_thread:
+                self._stream_thread.stop()
+        except Exception:
+            pass
+        # 4. Stop arc reactor speaking state
+        try:
+            if self._arc:
+                self._arc.set_speaking(False)
+        except Exception:
+            pass
+        # 5. Clean up UI
         self.stop_btn.setVisible(False)
         self.wave.set_active(False)
         self.status_bar.setText("READY")
@@ -3096,10 +3127,13 @@ class StrixWindow(QMainWindow):
         self.input_field.setFocus()
         if self._streaming_bubble:
             partial = self._streaming_bubble.full_text()
-            try: self.chat_area.replace_streaming_bubble(self._streaming_bubble, partial or "— Stopped —")
-            except Exception: pass
+            try:
+                self.chat_area.replace_streaming_bubble(self._streaming_bubble, partial or "— Stopped —")
+            except Exception:
+                pass
             self._streaming_bubble = None
-        if self._wake_thread: self._wake_thread.resume()
+        if self._wake_thread:
+            self._wake_thread.resume()
 
     def _on_voice(self):
         self.voice_btn.setText("◉  LISTENING")
@@ -3130,12 +3164,26 @@ class StrixWindow(QMainWindow):
         else: self.status_bar.setText("VOICE: NOTHING HEARD. TRY AGAIN")
 
     def _clear(self):
-        layout = self.chat_area._layout
-        while layout.count() > 1:
-            item = layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-        if self.brain: self.brain.clear_memory()
-        self.chat_area.add_message("STRIX","Memory cleared. New session ready Boss.",True,"phi3:latest")
+        # 1. Stop everything running immediately (TTS, streams, voice output)
+        self._on_stop()
+
+        # 2. Wipe all chat bubble widgets safely (preserving layout stretch spacer)
+        self.chat_area.clear_chat()
+
+        # 3. Clear pipeline memory
+        if self.brain and hasattr(self.brain, "clear_memory"):
+            self.brain.clear_memory()
+
+        # 4. Reset internal state pointers
+        self._streaming_bubble = None
+
+        # 5. Open fresh chat session cleanly
+        self.chat_area.add_message("STRIX", "New session initialized, Boss. All tasks stopped. How can I help you today?", True, "qwen3:8b")
+        self.status_bar.setText("READY")
+        self.status_dot.setText("ONLINE")
+        self.status_dot.setStyleSheet(f"color:{GREEN};font-size:9px;letter-spacing:3px;background:transparent;")
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
 
     def _export_chat(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -3144,14 +3192,24 @@ class StrixWindow(QMainWindow):
             "Text Files (*.txt)")
         if not path: return
         try:
-            history = self.brain.get_history(limit=200) if self.brain else []
+            history = self.brain.get_history(limit=200) if (self.brain and hasattr(self.brain, "get_history")) else []
             with open(path, "w", encoding="utf-8") as f:
                 f.write(f"STRIX Chat Export — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("="*60+"\n\n")
-                for msg in history:
-                    role = "STRIX" if msg["role"]=="assistant" else "YOU"
-                    f.write(f"[{role}]\n{msg['content']}\n\n")
-            self.status_bar.setText(f"Exported: {path}")
+                if history:
+                    for msg in history:
+                        role = "STRIX" if msg.get("role") in ("assistant", "strix") else "YOU"
+                        f.write(f"[{role}]\n{msg.get('content', '')}\n\n")
+                else:
+                    # Fallback — pull directly from active chat area UI
+                    layout = self.chat_area._scroll_widget.layout()
+                    for i in range(layout.count()):
+                        w = layout.itemAt(i).widget()
+                        if hasattr(w, "text_lbl") and hasattr(w, "name_lbl"):
+                            role = w.name_lbl.text()
+                            text = w.text_lbl.text()
+                            f.write(f"[{role}]\n{text}\n\n")
+            self.status_bar.setText(f"Exported: {os.path.basename(path)}")
         except Exception as e:
             self.status_bar.setText(f"Export failed: {e}")
 

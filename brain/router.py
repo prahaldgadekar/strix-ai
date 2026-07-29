@@ -181,7 +181,7 @@ def route_task(task: dict, stream: bool = False):
 def _route_to_model(prompt: str, model_key: str, stream: bool = False):
     """
     Route prompt to correct model.
-    NEW: model_key "dev" → lazy dev mode (qwen2.5-coder + lazy dev prompt)
+    Includes recent conversation context from Obsidian / SQLite memory.
     """
     for attempt in range(5):
         if is_ollama_running(retries=1, wait=0):
@@ -193,45 +193,58 @@ def _route_to_model(prompt: str, model_key: str, stream: bool = False):
         msg = "STRIX offline. Please start Ollama with: ollama serve"
         return iter([msg]) if stream else msg
 
+    # Fetch recent conversation context for natural follow-ups (e.g. "now in java")
+    try:
+        from memory.obsidian_memory import get_obsidian_memory
+        mem = get_obsidian_memory()
+        history = mem.get_recent_context(limit=6)
+    except Exception:
+        history = ""
+
+    if history:
+        full_prompt_text = f"\n--- RECENT CONVERSATION HISTORY ---\n{history}\n--- END CONVERSATION HISTORY ---\n\nUser Request: {prompt}"
+    else:
+        full_prompt_text = prompt
+
     if model_key == "chat":
-        full = PROMPT_CHAT + prompt
+        full = PROMPT_CHAT + full_prompt_text
         return call_chat_model(full, stream=stream)
 
     elif model_key == "reasoning":
-        full = PROMPT_REASON + prompt
+        full = PROMPT_REASON + full_prompt_text
         return call_reasoning_model(full, stream=stream)
 
     elif model_key == "coding":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this code in {lang} ONLY.\n" if lang else ""
-        full = PROMPT_CODE + lang_note + prompt
+        full = PROMPT_CODE + lang_note + full_prompt_text
         return call_coding_model(full, stream=stream)
 
     elif model_key == "frontend":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this in {lang} ONLY.\n" if lang else ""
-        full = PROMPT_FRONTEND + lang_note + prompt
+        full = PROMPT_FRONTEND + lang_note + full_prompt_text
         return call_frontend_model(full, stream=stream)
 
     elif model_key == "backend":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this in {lang} ONLY.\n" if lang else ""
-        full = PROMPT_BACKEND + lang_note + prompt
+        full = PROMPT_BACKEND + lang_note + full_prompt_text
         return call_backend_model(full, stream=stream)
 
     elif model_key == "planning":
-        full = PROMPT_REASON + prompt
+        full = PROMPT_REASON + full_prompt_text
         return call_planning_model(full, stream=stream)
 
     # ── NEW: lazy dev route ───────────────────────────────────
     elif model_key == "dev":
         lang = _detect_language(prompt)
         lang_note = f"\nIMPORTANT: Write this in {lang} ONLY.\n" if lang else ""
-        full = PROMPT_LAZY_DEV + lang_note + prompt
+        full = PROMPT_LAZY_DEV + lang_note + full_prompt_text
         return call_coding_model(full, stream=stream)
 
     else:
-        full = PROMPT_CHAT + prompt
+        full = PROMPT_CHAT + full_prompt_text
         return call_chat_model(full, stream=stream)
 
 
@@ -401,33 +414,12 @@ def _run_tool(action: str, params: dict) -> str:
             return f"Could not delete file: {e}"
 
     if action == "open_url":
-        url     = params.get("url", "")
-        profile = params.get("profile", "main")
+        url = params.get("url", "")
         if not url:
             return "No URL provided."
 
-        local      = os.environ.get("LOCALAPPDATA", "")
-        if not local:
-            uname  = os.environ.get("USERNAME", "prahl")
-            local  = f"C:\\Users\\{uname}\\AppData\\Local"
-
-        dev_exe    = os.path.join(local, "Google", "Chrome Dev", "Application", "chrome.exe")
-        stable_exe = os.path.join(local, "Google", "Chrome", "Application", "chrome.exe")
-        dev_data   = os.path.join(local, "Google", "Chrome Dev", "User Data")
-        stable_data= os.path.join(local, "Google", "Chrome", "User Data")
-
-        if profile == "work":
-            exe      = stable_exe
-            data_dir = stable_data
-        else:
-            exe      = dev_exe if os.path.exists(dev_exe) else stable_exe
-            data_dir = dev_data if os.path.exists(dev_exe) else stable_data
-
-        if os.path.exists(exe):
-            subprocess.Popen([exe, f"--user-data-dir={data_dir}",
-                              "--profile-directory=Default", url])
-        else:
-            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
+        import webbrowser
+        webbrowser.open(url)
         return f"Opened {url}, Boss."
 
     if action == "play_spotify":

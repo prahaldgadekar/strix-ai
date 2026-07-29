@@ -14,8 +14,13 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "jarvis_memory.db")
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        pass
     return conn
 
 
@@ -66,6 +71,13 @@ def save_message(role: str, content: str):
     )
     conn.commit()
     conn.close()
+
+    # Also log to Obsidian Daily Notes
+    try:
+        from memory.obsidian_memory import get_obsidian_memory
+        get_obsidian_memory().log_message(role, content)
+    except Exception as e:
+        print(f"[Memory] Obsidian log error: {e}")
 
 
 def get_recent_messages(limit: int = 20) -> list:

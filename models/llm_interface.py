@@ -87,6 +87,9 @@ def _trim_prompt(prompt: str, max_chars: int = 2000) -> str:
     return "...[trimmed]...\n" + prompt[-max_chars:]
 
 
+_http_session = requests.Session()
+_http_session.headers.update({"Content-Type": "application/json"})
+
 def _call_ollama(model: str, prompt: str, system: str = "",
                  stream: bool = False, options: dict = None):
     """Core Ollama call — supports streaming and non-streaming."""
@@ -101,7 +104,7 @@ def _call_ollama(model: str, prompt: str, system: str = "",
     try:
         if stream:
             return _stream_ollama(url, payload)
-        r = requests.post(url, json=payload, timeout=60)
+        r = _http_session.post(url, json=payload, timeout=(5, 60))
         r.raise_for_status()
         return r.json().get("response", "").strip()
     except requests.exceptions.ConnectionError:
@@ -118,7 +121,7 @@ def _call_ollama(model: str, prompt: str, system: str = "",
 def _stream_ollama(url: str, payload: dict):
     """Generator that yields tokens one by one."""
     try:
-        with requests.post(url, json=payload, stream=True, timeout=60) as r:
+        with _http_session.post(url, json=payload, stream=True, timeout=(5, 60)) as r:
             r.raise_for_status()
             for line in r.iter_lines():
                 if line:

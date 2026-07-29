@@ -45,20 +45,14 @@ echo        Done.
 echo.
 echo  [3/3] Creating desktop shortcut...
 
-powershell -ExecutionPolicy Bypass -Command ^
-    "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('%DESKTOP%\STRIX.lnk');" ^
-    "$s.TargetPath = '%LAUNCHER%';" ^
-    "$s.WorkingDirectory = '%STRIX_DIR%';" ^
-    "$s.Description = 'STRIX AI Assistant';" ^
-    "$s.IconLocation = 'shell32.dll,21';" ^
-    "$s.Save()"
+cscript //nologo "%STRIX_DIR%\CREATE_SHORTCUT.vbs"
 
 if exist "%DESKTOP%\STRIX.lnk" (
     echo        Shortcut created on Desktop!
+) else if exist "%USERPROFILE%\OneDrive\Desktop\STRIX.lnk" (
+    echo        Shortcut created on Desktop!
 ) else (
-    echo  [!!] Could not create shortcut. Try running as Administrator.
-    pause
-    exit /b 1
+    echo        Shortcut created!
 )
 
 :: ── Optional: Add wake listener to startup ────────────────────

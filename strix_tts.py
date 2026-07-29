@@ -42,16 +42,50 @@ def tts_clean_speak(text: str) -> str:
     """
     Convert response text to clean speakable version.
     - Removes code blocks entirely
-    - Keeps news, info, answers fully intact
+    - If output is big (>220 chars or multi-paragraph), speaks title/summary & stops
     - Converts symbols to words where needed
-    - NO character cap — speaks everything readable
     """
+    if not text or not text.strip():
+        return ""
+
+    raw_text = text.strip()
+
     # ── Remove code blocks — never read raw code ─────────────
-    text = re.sub(r'```[\s\S]*?```', 'Code block here.', text)
+    text = re.sub(r'```[\s\S]*?```', '', text)
     text = re.sub(r'`[^`]*`', '', text)
+
+    # ── If output is big, extract title / first sentence only ─
+    is_big_output = len(raw_text) > 220 or '\n\n' in raw_text or '```' in raw_text
 
     # ── Remove markdown headers but keep the text ─────────────
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+
+    # ── Unit and symbol pronunciations ────────────────────────
+    # Temperature (24.7C -> 24.7 degrees Celsius, 76F -> 76 degrees Fahrenheit)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*°?\s*C\b', r'\1 degrees Celsius', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*°?\s*F\b', r'\1 degrees Fahrenheit', text)
+    text = text.replace('°', ' degrees ')
+
+    # Speed & Data units
+    unit_replacements = [
+        (r'\bkm/s\b', 'kilometers per second'),
+        (r'\bkm/h\b', 'kilometers per hour'),
+        (r'\bm/s\b', 'meters per second'),
+        (r'\bmph\b', 'miles per hour'),
+        (r'\bMB/s\b', 'megabytes per second'),
+        (r'\bGB/s\b', 'gigabytes per second'),
+        (r'\bKB/s\b', 'kilobytes per second'),
+        (r'\bMbps\b', 'megabits per second'),
+        (r'\bGbps\b', 'gigabits per second'),
+        (r'\bKbps\b', 'kilobits per second'),
+        (r'\bMB\b', 'megabytes'),
+        (r'\bGB\b', 'gigabytes'),
+        (r'\bKB\b', 'kilobytes'),
+        (r'\bTB\b', 'terabytes'),
+        ('%', ' percent '),
+    ]
+    for pattern, repl in unit_replacements:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
 
     # ── Speak symbols as words ────────────────────────────────
     symbol_words = [
@@ -61,10 +95,7 @@ def tts_clean_speak(text: str) -> str:
         ('<=',  'less than or equal to'),
         ('->',  'arrow'),
         ('=>',  'returns'),
-        ('//',  ''),            # strip comments
-        ('/**', ''),
-        ('/*',  ''),
-        ('*/',  ''),
+        ('//',  ''),
         ('...',  '.'),
     ]
     for sym, word in symbol_words:
@@ -73,18 +104,15 @@ def tts_clean_speak(text: str) -> str:
     # ── Remove remaining symbols silently ─────────────────────
     remove_symbols = ['*', '#', '_', '`', '\\', '|', '^', '~',
                       '@', '[', ']', '{', '}', '<', '>', '+',
-                      '=', '%', '$', '&']
+                      '=', '$', '&']
     for sym in remove_symbols:
         text = text.replace(sym, ' ')
 
-    # ── Punctuation fixes ──────────────────────────────────────
     text = text.replace(';', '.')
     text = text.replace(':', '. ')
-    # Slash between words → "slash"
     text = re.sub(r'(\w)/(\w)', r'\1 slash \2', text)
     text = text.replace('/', ' ')
 
-    # ── Filter line by line ────────────────────────────────────
     lines = text.split('\n')
     good_lines = []
     for line in lines:
@@ -92,27 +120,33 @@ def tts_clean_speak(text: str) -> str:
             good_lines.append(line.strip())
 
     text = ' '.join(good_lines)
-
-    # ── Clean up whitespace ────────────────────────────────────
     text = re.sub(r'\.{2,}', '.', text)
-    text = re.sub(r'\s{2,}', ' ', text)
-    text = text.strip()
+    text = re.sub(r'\s{2,}', ' ', text).strip()
 
-    # ── NO hard cap — return full cleaned text ─────────────────
+    # If output is big, speak title / summary line only and stop
+    if is_big_output and text:
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        title_summary = ""
+        for s in sentences:
+            if len(title_summary) + len(s) <= 160:
+                title_summary += (" " if title_summary else "") + s
+            else:
+                break
+        if not title_summary:
+            title_summary = sentences[0][:150]
+        return f"{title_summary.strip()} Details are on screen, Boss."
+
     return text
 
 
 def _split_sentences(text: str) -> list:
     """
     Split into natural sentence chunks for fluent delivery.
-    Each chunk max 300 chars — long enough to sound natural,
-    short enough to start speaking quickly.
     """
-    # Split on sentence endings
     parts = re.split(r'(?<=[.!?])\s+', text)
     chunks, current = [], ""
     for p in parts:
-        if len(current) + len(p) < 300:
+        if len(current) + len(p) < 250:
             current += (" " if current else "") + p
         else:
             if current:
@@ -121,8 +155,7 @@ def _split_sentences(text: str) -> list:
     if current:
         chunks.append(current.strip())
 
-    # Filter out any empty or skip-worthy chunks
-    return [c for c in chunks if c.strip() and not _should_skip_line(c)] or [text[:300]]
+    return [c for c in chunks if c.strip() and not _should_skip_line(c)] or [text[:250]]
 
 
 class StrixTTS:
@@ -131,26 +164,23 @@ class StrixTTS:
         self.available = False
         self._queue    = queue.Queue()
         self._engine   = None
-        self._mode     = None
+        self._mode     = "sapi"
 
-        # Try Windows SAPI first — zero latency
+        # Test SAPI availability
         try:
             import win32com.client
-            self._sapi = win32com.client.Dispatch("SAPI.SpVoice")
-            self._configure_sapi()
-            self._mode = "sapi"
+            _test_sapi = win32com.client.Dispatch("SAPI.SpVoice")
             self.available = True
             print("[TTS] Using Windows SAPI — full response mode.")
         except Exception:
-            self._sapi = None
+            self._mode = "pyttsx3"
 
-        # Fallback to pyttsx3
+        # Fallback to pyttsx3 test
         if not self.available:
             try:
                 import pyttsx3
                 self._engine = pyttsx3.init()
                 self._configure_pyttsx3()
-                self._mode = "pyttsx3"
                 self.available = True
                 print("[TTS] Using pyttsx3 fallback.")
             except Exception as e:
@@ -160,16 +190,22 @@ class StrixTTS:
         self._worker_thread = threading.Thread(target=self._worker, daemon=True)
         self._worker_thread.start()
 
-    def _configure_sapi(self):
+    def _configure_sapi_instance(self, sapi):
         try:
-            voices = self._sapi.GetVoices()
-            for i in range(voices.Count):
-                name = voices.Item(i).GetDescription().lower()
-                if "david" in name or "mark" in name or "george" in name:
-                    self._sapi.Voice = voices.Item(i)
+            voices = sapi.GetVoices()
+            selected = False
+            for pref in ["zira", "hazel", "helen", "catherine", "susan", "linda", "aria", "eva", "female", "woman"]:
+                for i in range(voices.Count):
+                    name = voices.Item(i).GetDescription().lower()
+                    if pref in name:
+                        sapi.Voice = voices.Item(i)
+                        selected = True
+                        print(f"[TTS] Selected Female Voice: {voices.Item(i).GetDescription()}")
+                        break
+                if selected:
                     break
-            self._sapi.Rate   = -1    # slightly slower = clearer
-            self._sapi.Volume = 100
+            sapi.Rate   = 0     # Clear, natural pacing
+            sapi.Volume = 100
         except Exception:
             pass
 
@@ -177,8 +213,10 @@ class StrixTTS:
         try:
             voices = self._engine.getProperty("voices")
             for v in voices:
-                if "david" in v.name.lower() or "george" in v.name.lower():
+                vname = v.name.lower()
+                if any(m in vname for m in ["zira", "hazel", "helen", "catherine", "female", "woman", "her"]):
                     self._engine.setProperty("voice", v.id)
+                    print(f"[TTS] Selected Female Voice (pyttsx3): {v.name}")
                     break
         except Exception:
             pass
@@ -186,7 +224,22 @@ class StrixTTS:
         self._engine.setProperty("volume", 1.0)
 
     def _worker(self):
-        """Drain queue — speaks one sentence chunk at a time."""
+        """Drain queue — speaks one sentence chunk at a time with thread-safe COM init."""
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
+
+        sapi = None
+        if self._mode == "sapi":
+            try:
+                import win32com.client
+                sapi = win32com.client.Dispatch("SAPI.SpVoice")
+                self._configure_sapi_instance(sapi)
+            except Exception as e:
+                print(f"[TTS] SAPI dispatch error: {e}")
+
         while True:
             try:
                 text = self._queue.get(timeout=0.5)
@@ -194,29 +247,24 @@ class StrixTTS:
                     break
                 if not self.muted and text.strip():
                     try:
-                        if self._mode == "sapi":
-                            self._sapi.Speak(text, 0)
-                        else:
+                        if sapi:
+                            sapi.Speak(text, 0)
+                        elif self._mode == "pyttsx3" and self._engine:
                             self._engine.say(text)
                             self._engine.runAndWait()
                     except Exception as e:
                         print(f"[TTS] Speak error: {e}")
-                        if self._mode == "pyttsx3":
-                            try:
-                                import pyttsx3
-                                self._engine = pyttsx3.init()
-                                self._configure_pyttsx3()
-                            except Exception:
-                                pass
                 self._queue.task_done()
             except queue.Empty:
                 continue
 
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
     def speak(self, text: str, blocking: bool = False):
-        """
-        Clean and queue full text for speaking.
-        No cap — speaks everything readable.
-        """
         if not self.available or self.muted or not text.strip():
             return
         cleaned = tts_clean_speak(text)
@@ -236,8 +284,15 @@ class StrixTTS:
                 pass
         try:
             if self._mode == "sapi":
-                self._sapi.Speak("", 2)   # SVSFPurgeBeforeSpeak = 2
-            else:
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                    import win32com.client
+                    s = win32com.client.Dispatch("SAPI.SpVoice")
+                    s.Speak("", 2)   # SVSFPurgeBeforeSpeak = 2
+                except Exception:
+                    pass
+            elif self._engine:
                 self._engine.stop()
         except Exception:
             pass
