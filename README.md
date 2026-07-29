@@ -8,11 +8,12 @@
 ![Python](https://img.shields.io/badge/Python-3.11+-00e5ff?style=for-the-badge&logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-GUI-ff0033?style=for-the-badge&logo=qt&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-Local_AI-ffd700?style=for-the-badge)
+![Obsidian](https://img.shields.io/badge/Obsidian-Memory_Vault-7a3ee8?style=for-the-badge&logo=obsidian&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0088cc?style=for-the-badge&logo=windows&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-ff0033?style=for-the-badge)
 
-**A cinematic ROG-themed AI desktop assistant with a tactical HUD.**  
-**Runs 100% locally on your PC using Ollama — no cloud, no subscriptions.**
+**A cinematic ROG-themed AI desktop assistant with a tactical HUD & Obsidian Vault Memory.**  
+**Runs 100% locally on your PC using Ollama — no cloud, no subscriptions, complete privacy.**
 
 </div>
 
@@ -20,16 +21,14 @@
 
 ## Preview
 
-> Tactical HUD interface · Voice input · Real-time system stats · Live APIs
+> Tactical HUD interface · Voice input · Obsidian memory vault · Real-time system stats · Live APIs
 
 ```
 [STRIX] STRIX reporting for duty. All models hot, all tools sharp. Let's go.
-[YOU]   weather
-[STRIX] Weather in Pune, IN — Clear Sky | Temp: 31.2°C (feels 29.1°C) | Humidity: 13%
-[YOU]   bitcoin price
-[STRIX] Bitcoin is currently at USD 67,420 | INR 56,23,450
-[YOU]   create a file on desktop named strix-notes
-[STRIX] Done. Created strix-notes.txt on your Desktop.
+[YOU]   write addition and subtraction code in python
+[STRIX] Here is your Python code: ...
+[YOU]   now in java
+[STRIX] Here is the Java version of addition and subtraction: ...
 [YOU]   system status
 [STRIX] CPU: 0.5% | 32 Cores | RAM: 9.17 / 16.33 GB | PWR: 43% CHARGING | NET: 192.168.1.9
 ```
@@ -48,8 +47,12 @@
 
 | Category | What STRIX Can Do |
 |---|---|
-| **AI Chat** | Natural conversation using local Ollama models (phi3, llama3.1, qwen2.5-coder) |
-| **Voice** | Speak to STRIX, hear responses via TTS |
+| **AI Chat** | Natural conversation using local Ollama models (`phi3`, `llama3.1`, `qwen2.5-coder`) |
+| **Context Memory** | Remembers conversation flow naturally (e.g. follow-up requests like *"now in java"* work seamlessly) |
+| **Obsidian Vault Memory** | Automatically logs daily notes (`Daily Notes/YYYY-MM-DD.md`) & generates visual `[[wikilinks]]` graph |
+| **Background Supervisor** | Ultra-lightweight Windows startup background process (< 2MB RAM, 0% CPU) with auto-restart |
+| **Performance Engine** | SQLite WAL mode concurrency & Qt widget pruning (capped at 150 items) for lag-free long sessions |
+| **Voice** | Speak to STRIX, hear responses via TTS (Hinglish/English support) |
 | **Desktop Control** | Create files, folders, open apps on Windows |
 | **Weather** | Live weather for your city (OpenWeatherMap) |
 | **News** | Latest tech headlines via NewsAPI |
@@ -61,8 +64,6 @@
 | **IP Info** | Your public IP and location |
 | **System Stats** | Live CPU, RAM, Battery, Network — shown on HUD |
 | **Projects** | Generate Java, Python, C, C++ project templates |
-| **Memory** | Remembers your preferences across sessions |
-| **Export Chat** | Export your full conversation log |
 
 ---
 
@@ -72,11 +73,21 @@ STRIX uses three specialized local models via Ollama:
 
 | Role | Model | Purpose |
 |---|---|---|
-| **Chat** | `phi3:latest` | Fast general conversation |
-| **Reasoning** | `llama3.1` | Deep thinking and analysis |
-| **Coding** | `qwen2.5-coder` | Code generation and debugging |
+| **Chat** | `phi3:latest` | Fast general conversation & quick answers |
+| **Reasoning** | `llama3.1` | Deep thinking, analysis, and planning |
+| **Coding** | `qwen2.5-coder` | Software development, code generation, and debugging |
 
 Switch the active model from the HUD's **AI MODELS** panel at any time.
+
+---
+
+## Obsidian Vault Memory Integration
+
+STRIX integrates directly with [Obsidian](https://obsidian.md) for long-term persistent memory:
+
+- **Daily Notes (`Daily Notes/YYYY-MM-DD.md`)**: Automatically logs every chat turn, code snippet, and task summary into daily Markdown notes.
+- **Wikilink Graph (`[[Topic]]`)**: Auto-tags topics (e.g. `[[Python]]`, `[[Java]]`, `[[Coding]]`), allowing you to explore STRIX's visual memory graph in Obsidian (`Ctrl + G`).
+- **User Profile (`User Profile.md`)**: Remembers user preferences, preferred tech stack, and coding style.
 
 ---
 
@@ -85,13 +96,14 @@ Switch the active model from the HUD's **AI MODELS** panel at any time.
 ```
 strix/
 ├── strix.py                # Entry point
-├── strix_gui.py            # Tactical ROG-themed PySide6 HUD
-├── strix_tts.py            # Text-to-speech
-├── START_STRIX.bat         # One-click launcher (starts Ollama + STRIX)
-├── CREATE_SHORTCUT.bat     # Creates Desktop shortcut
+├── strix_gui.py            # Tactical ROG-themed PySide6 HUD (optimized for long sessions)
+├── strix_tts.py            # Text-to-speech engine
+├── STRIX_SUPERVISOR.vbs    # Lightweight Windows startup background supervisor
+├── STOP_SUPERVISOR.bat     # Helper script to pause auto-restart background supervisor
+├── START_STRIX.vbs         # One-click launcher (starts Ollama + STRIX)
+├── CREATE_SHORTCUT.vbs     # Creates Desktop shortcut
 ├── requirements.txt
-├── .env                    # Your API keys (not in git)
-├── .env.example            # Template
+├── .env                    # Environment config & API keys (not in git)
 │
 ├── api/
 │   ├── weather.py          # OpenWeatherMap
@@ -102,15 +114,21 @@ strix/
 │   ├── core.py             # Central brain controller
 │   ├── input_processor.py  # Voice + text processing
 │   ├── planner.py          # LLM task planner
-│   ├── router.py           # Routes to tools or LLM
+│   ├── router.py           # Context-aware LLM & tool router
 │   └── executor.py         # Executes task plans
 │
 ├── memory/
-│   ├── memory_db.py        # SQLite memory system
-│   └── strix_memory.db     # Auto-created
+│   ├── memory_db.py        # SQLite WAL concurrency memory system
+│   ├── obsidian_memory.py  # Obsidian Vault daily notes & wikilinks manager
+│   └── strix_memory.db     # Auto-created SQLite DB
+│
+├── strix core/             # Obsidian Vault directory
+│   ├── Daily Notes/        # Auto-generated daily memory notes
+│   ├── User Profile.md     # User preferences note
+│   └── .obsidian/          # Obsidian configuration
 │
 ├── models/
-│   └── llm_interface.py    # Ollama API calls
+│   └── llm_interface.py    # Ollama API calls with HTTP connection pooling
 │
 └── tools/
     ├── system_tools.py     # CPU, RAM, battery, network
@@ -127,6 +145,7 @@ strix/
 - Windows 10 or 11
 - Python 3.11 or newer
 - [Ollama](https://ollama.com) installed
+- [Obsidian](https://obsidian.md) (Optional, for visual memory graph)
 
 ### Step 1 — Clone the repo
 ```bash
@@ -146,20 +165,21 @@ ollama pull llama3.1
 ollama pull qwen2.5-coder:7b
 ```
 
-### Step 4 — Set up your API keys
+### Step 4 — Set up environment & vault path
 ```bash
 copy .env.example .env
 ```
-Open `.env` and fill in your keys (see API Keys section below).
+Open `.env` and set your Obsidian vault path (default is `e:\Strix\strix core`):
+```env
+OBSIDIAN_VAULT_PATH=e:\Strix\strix core
+```
 
-### Step 5 — Create Desktop shortcut (one time only)
-```
-Double-click CREATE_SHORTCUT.bat
-```
+### Step 5 — Enable Background Startup (Optional)
+Copy `STRIX_SUPERVISOR.vbs` to your Windows Startup folder (`shell:startup`) for instant background startup and auto-restart capability.
 
 ### Step 6 — Launch STRIX
 ```
-Double-click the STRIX shortcut on your Desktop
+Double-click START_STRIX.vbs
 ```
 STRIX starts Ollama automatically every time.
 
@@ -177,25 +197,6 @@ All APIs have free tiers. No credit card required.
 | GitHub | [github.com/settings/tokens](https://github.com/settings/tokens) | 5,000/hour |
 
 > Crypto, Wikipedia, IP info, Currency, and Jokes work with **no API key at all**.
-
----
-
-## Configuration
-
-Edit your `.env` file:
-
-```env
-OPENWEATHER_API_KEY=your_key
-NEWS_API_KEY=your_key
-DEFAULT_CITY=Pune
-OLLAMA_BASE_URL=http://localhost:11434
-CHAT_MODEL=phi3
-REASONING_MODEL=llama3.1
-CODING_MODEL=qwen2.5-coder:7b
-NASA_KEY=DEMO_KEY
-GITHUB_USERNAME=your_github_username
-WAKE_WORD=strix
-```
 
 ---
 
@@ -217,7 +218,8 @@ system status                    → CPU, RAM, battery info
 create file on desktop named X   → Creates X.txt on Desktop
 create folder named Projects     → Creates folder on Desktop
 open notepad                     → Opens Notepad
-write a Python function for X    → AI generates code
+write addition code in python   → AI generates code
+now in java                      → Context-aware conversion to Java
 ```
 
 ---
@@ -225,7 +227,7 @@ write a Python function for X    → AI generates code
 ## Voice Mode
 
 Click the **VOICE** button or use the wake word. STRIX will:
-1. Listen for your command
+1. Listen for your command (supports English + Hindi mixed accents)
 2. Process it through the active model
 3. Speak the response out loud
 
@@ -233,30 +235,17 @@ Toggle voice output anytime with the **VOL ON / VOL OFF** button on the HUD.
 
 ---
 
-## Quick Access Panel
-
-The right-side panel gives you one-click shortcuts:
-
-| Key | Action |
-|---|---|
-| `W` | Weather |
-| `N` | Tech News |
-| `S` | System Status |
-| `C` | Crypto Prices |
-| `P` | Projects |
-
----
-
 ## Built With
 
 - [PySide6](https://doc.qt.io/qtforpython/) — Desktop GUI (ROG tactical theme)
 - [Ollama](https://ollama.com) — Local AI models
+- [Obsidian](https://obsidian.md) — Visual memory vault & Markdown daily notes
 - [phi3](https://ollama.com/library/phi3) — Fast chat model
 - [llama3.1](https://ollama.com/library/llama3.1) — Reasoning model
 - [qwen2.5-coder](https://ollama.com/library/qwen2.5-coder) — Coding model
 - [SpeechRecognition](https://pypi.org/project/SpeechRecognition/) — Voice input
 - [pyttsx3](https://pypi.org/project/pyttsx3/) — Text to speech
-- [SQLite](https://www.sqlite.org/) — Session memory
+- [SQLite](https://www.sqlite.org/) — WAL mode concurrency session memory
 
 ---
 
